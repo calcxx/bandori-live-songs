@@ -101,14 +101,18 @@ sequenceDiagram
     C->>DB: SELECT songs JOIN bands
     DB-->>C: 曲目池 SongPoolItem[]
     S->>DB: SELECT eventernote_user_cache WHERE userId
-    DB-->>S: 缓存行 (activities / TTL / fetchStatus)
+    DB-->>S: 缓存行 (activities / remoteEventCount / fetchStatus)
+    S->>EN: fetchUserEventCount(userId)
+    EN-->>S: 远程活动总数（轻量请求）
 
-    alt 缓存过期或缺失
+    alt 无缓存或需全量刷新
         S->>EN: fetchAllUserEvents(userId)
         EN->>EN: 分页抓取 HTML (带重试)
         EN-->>S: EventernoteEventSnapshot[]
         S->>S: createBandoriUserEventSnapshots()
         S->>DB: UPSERT eventernote_user_cache
+    else 远程总数与缓存不一致
+        Note over S: 先返回缓存 activities，后台异步全量刷新
     end
 
     S->>S: buildMatchedEvents()
@@ -172,7 +176,7 @@ stats/
 ├── catalog-cache.ts             # 曲目库缓存 (unstable_cache)
 ├── build-matched-events.ts      # 活动 × 乐队 × Setlist 匹配
 ├── aggregate.ts                 # 前端聚合逻辑 (纯函数)
-├── eventernote-cache-policy.ts  # 缓存策略：TTL / 刷新 / 泄漏保护
+├── eventernote-cache-policy.ts  # 缓存策略：活动数比对 / 刷新 / 租约
 ├── song-events-cache.ts         # 歌曲关联活动缓存
 ├── user-cache-maintenance.ts    # 用户缓存维护
 └── refresh-song-live-state.ts   # 刷新歌曲现场演出状态
@@ -180,16 +184,21 @@ stats/
 
 **`get-user-song-stats.ts`** 是整个应用的核心编排函数，职责：
 1. 并行获取曲目库和用户缓存
-2. 判断缓存状态（新鲜 / 过期 / 缺失 / 解析器版本过旧）
+2. 判断缓存状态（缺失 / 远程活动数变化 / 解析器版本过旧 / 手动刷新）
 3. 决定是否触发后台刷新（`after()` 调度）
 4. 调用 `buildMatchedEvents` 完成活动-歌曲匹配
 5. 返回 `UserSongStatsResult` 联合类型
 
-缓存策略：
-- 用户活动数据缓存 12 小时（`cacheTtlMs`）
-- 过期后返回 stale 数据 + 异步刷新（stale-while-revalidate）
-- 解析器版本不匹配时强制同步刷新
-- 使用数据库行级租约（`refreshingStartedAt`）防止并发刷新
+缓存策略（**非固定时间 TTL**；`expires_at` 列保留但当前写入为 `null`）：
+
+- 每次查询先轻量请求 Eventernote 用户活动页，解析**远程活动总数** `remoteEventCount`，与库中 `eventernote_user_cache.remote_event_count` 比对。
+- **总数相同**：视为缓存仍有效，直接返回已存 `activities`。
+- **总数不同**：立即返回旧 `activities`（`staleCacheUsed: true`），并后台触发全量分页抓取更新缓存（stale-while-revalidate）。
+- **无缓存行**：返回 warming，执行全量抓取初始化。
+- **无法取得远程总数**（站点异常等）：不触发刷新，尽量返回已有缓存。
+- **解析器版本**（`parserVersion`）升级时：同步全量刷新。
+- **用户手动刷新**（`?refresh=1` 或 `awaitFreshAfter`）：按 inline/background 模式强制刷新。
+- 使用数据库行级租约（`refreshingStartedAt`，5 分钟）与进程内去重，防止同一用户并发全量抓取。
 
 #### 6.3.2 `eventernote/` — Eventernote 爬虫
 
@@ -297,6 +306,7 @@ erDiagram
         timestamp last_fetched_at
         timestamp expires_at
         timestamp refreshing_started_at
+        int remote_event_count
     }
 ```
 
@@ -345,7 +355,7 @@ tests/
 测试覆盖核心业务逻辑，重点测试：
 - HTML 解析（传入真实 HTML 片段，无需 mock HTTP）
 - 数据聚合（纯函数，输入输出确定性）
-- 缓存策略（TTL 判断、租约机制）
+- 缓存策略（活动数比对、租约机制）
 - 活动匹配与可见性规则
 
 ## 8. 关键设计决策
@@ -360,12 +370,12 @@ tests/
 graph LR
     subgraph "缓存层级"
         L1["Next.js unstable_cache<br/>曲目库 5min / 匹配结果 5min"]
-        L2["Postgres eventernote_user_cache<br/>用户活动 12h TTL"]
+        L2["Postgres eventernote_user_cache<br/>按远程活动数失效"]
         L3["Static JSON (src/data/)<br/>曲目库快照"]
     end
 
     subgraph "刷新策略"
-        SWR["Stale-While-Revalidate<br/>过期后返回 stale + 异步刷新"]
+        SWR["Stale-While-Revalidate<br/>活动数变化时先返回旧数据再刷新"]
         Lease["数据库行级租约<br/>防止并发刷新"]
         Dedup["进程内去重<br/>同一用户仅一个 in-flight 请求"]
     end
