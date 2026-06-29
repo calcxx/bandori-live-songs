@@ -1,0 +1,73 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+  --background: #f4f0e8;
+  --foreground: #1f2430;
+  --panel: rgba(255, 252, 247, 0.88);
+  --panel-strong: #fffdf9;
+  --border: rgba(56, 63, 77, 0.12);
+  --accent: #e76f51;
+  --accent-strong: #b84d32;
+  --ave-mujica-highlight: #881144;
+  --roselia-highlight: #3344aa;
+  --hello-happy-highlight: #DDBB00;
+  --ink-soft: rgba(31, 36, 48, 0.72);
+  --shadow-soft: 0 24px 60px rgba(115, 91, 73, 0.14);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-panel: var(--panel);
+  --color-panel-strong: var(--panel-strong);
+  --color-border-soft: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-ink-soft: var(--ink-soft);
+  --font-sans: var(--font-body);
+  --font-heading: var(--font-heading);
+  --shadow-soft: var(--shadow-soft);
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #181b24;
+  --foreground: #f5f0e8;
+  --panel: rgba(28, 33, 45, 0.82);
+  --panel-strong: #202636;
+  --border: rgba(255, 248, 239, 0.12);
+  --accent: #ff936a;
+  --accent-strong: #ffbf8f;
+  --ave-mujica-highlight: #aa5479;
+  --roselia-highlight: #5d6bbc;
+  --hello-happy-highlight: #FFDD00;
+  --ink-soft: rgba(245, 240, 232, 0.72);
+  --shadow-soft: 0 24px 60px rgba(8, 10, 17, 0.36);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-body), sans-serif;
+}
+
+a,
+button,
+input {
+  transition:
+    color 180ms ease,
+    background-color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.font-heading {
+  font-family: var(--font-heading), sans-serif;
+}
