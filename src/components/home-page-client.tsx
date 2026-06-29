@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Loader2Icon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type MouseEvent } from "react";
+import { navPillLabel } from "@/components/nav-pill";
 import { RefreshWhileWarming } from "@/components/refresh-while-warming";
 import { ResultsClient } from "@/components/results-client";
 import { SearchForm } from "@/components/search-form";
@@ -127,23 +128,18 @@ export function HomePageClient({
   return (
     <>
       <nav id="page-top" className="sticky top-0 z-50 border-b border-border-soft bg-background/85 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-5xl items-center gap-2 px-4 py-4 sm:px-8">
-          <div>
-            <Link
-              href="/"
-              onClick={resetToDemoHome}
-              className="font-heading text-lg font-semibold tracking-[-0.04em] hover:text-accent"
-            >
-              <span className="sm:hidden">{localeCopy.navTitleMobile}</span>
-              <span className="hidden sm:inline">{localeCopy.navTitleDesktop}</span>
-            </Link>
-          </div>
-          <div className="ml-auto flex items-center gap-2">
+        <div className="@container/nav-bar mx-auto flex max-w-5xl items-center justify-between gap-2 px-4 py-4 sm:px-8">
+          <Link
+            href="/"
+            onClick={resetToDemoHome}
+            className="min-w-0 truncate font-heading text-lg font-semibold tracking-[-0.04em] hover:text-accent"
+          >
+            <span className="sm:hidden">{localeCopy.navTitleMobile}</span>
+            <span className="hidden sm:inline">{localeCopy.navTitleDesktop}</span>
+          </Link>
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
             {isAdminAuthenticated ? (
-              <Link
-                href="/admin"
-                className="rounded-full border border-border-soft px-3 py-1.5 text-sm text-ink-soft transition hover:border-accent hover:text-accent"
-              >
+              <Link href="/admin" className={navPillLabel}>
                 管理
               </Link>
             ) : null}

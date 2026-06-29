@@ -1,6 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
+import { navPillOutline } from "@/components/nav-pill";
 import { cnCopy } from "@/lib/i18n/cn";
 
 const storageKey = "bdr-theme";
@@ -95,7 +96,7 @@ export function ThemeToggle() {
 
   return (
     <div
-      className="inline-flex items-center rounded-full border border-border-soft bg-panel-strong p-1"
+      className={`${navPillOutline} p-0.5`}
       role="group"
       aria-label={localeCopy.themeToggleAria}
     >
@@ -106,7 +107,7 @@ export function ThemeToggle() {
           <button
             key={option.value}
             type="button"
-            className={`rounded-full px-3 py-1.5 text-xs sm:text-sm ${
+            className={`flex h-full items-center rounded-full px-2 @[28rem]/nav-bar:px-2.5 ${
               active ? "bg-foreground text-background shadow-sm" : "text-ink-soft hover:text-foreground"
             }`}
             onClick={() => {
