@@ -451,5 +451,5 @@ graph TB
 ```
 
 - API 路由和页面使用 `runtime = "nodejs"`（Cheerio 需要 Node 环境）
-- 通过外部调度器定期调用 `/api/cron/event-ranking` 刷新活动排名
+- 通过外部调度器定期调用 `/api/cron/event-ranking` 刷新 `bandori_event_index`
 - 静态数据（`src/data/`）随代码部署，需通过脚本手动更新
