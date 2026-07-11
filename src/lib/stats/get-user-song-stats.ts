@@ -8,6 +8,7 @@ import { z } from "zod";
 
 import { getDb } from "@/lib/db/core";
 import { eventernoteUserCache } from "@/lib/db/schema";
+import { lookupBandoriEventIndex } from "@/lib/eventernote/bandori-event-index";
 import {
   bandoriUserEventSnapshotSchema,
   createBandoriUserEventSnapshots,
@@ -101,7 +102,11 @@ async function persistFetchedUserEventsCache(
   db = getDb(),
 ) {
   const now = new Date();
-  const activities = cachePayloadSchema.parse(createBandoriUserEventSnapshots(remote.events));
+  const indexByEventId = await lookupBandoriEventIndex(
+    remote.events.map((event) => event.eventernoteEventId),
+    db,
+  );
+  const activities = cachePayloadSchema.parse(createBandoriUserEventSnapshots(remote.events, indexByEventId));
   const remoteEventCount = remote.totalCount;
 
   await db

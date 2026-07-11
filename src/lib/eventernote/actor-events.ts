@@ -19,18 +19,7 @@ export const actorEventRankingEntrySchema = z.object({
   bandNames: z.array(z.string()),
 });
 
-export const actorEventRankingSnapshotSchema = z.object({
-  version: z.literal(4),
-  generatedAt: z.string().datetime(),
-  filteredThrough: z.string(),
-  sourceBandCount: z.number().int().nonnegative(),
-  scannedEventCount: z.number().int().nonnegative(),
-  mergedEventCount: z.number().int().nonnegative(),
-  events: z.array(actorEventRankingEntrySchema),
-});
-
 export type ActorEventRankingEntry = z.infer<typeof actorEventRankingEntrySchema>;
-export type ActorEventRankingSnapshot = z.infer<typeof actorEventRankingSnapshotSchema>;
 
 type ActorEventPageEntry = {
   eventernoteEventId: number;

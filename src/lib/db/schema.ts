@@ -12,7 +12,6 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import type { BandoriUserEventSnapshot } from "@/lib/eventernote/bandori-user-events";
-import type { ActorEventRankingSnapshot } from "@/lib/eventernote/actor-events";
 import type { EventVisibilityRules } from "@/lib/events/event-visibility";
 
 export const bandGroupTypeEnum = pgEnum("band_group_type", ["band", "project-common"]);
@@ -95,9 +94,16 @@ export const eventernoteUserCache = pgTable("eventernote_user_cache", {
   remoteEventCount: integer("remote_event_count"),
 });
 
-export const appRuntimeSnapshots = pgTable("app_runtime_snapshots", {
-  snapshotKey: text("snapshot_key").primaryKey(),
-  payload: jsonb("payload").$type<ActorEventRankingSnapshot>().notNull(),
+/** Actor-page authority: eventernoteEventId → BanG Dream bands (not Setlist events). */
+export const bandoriEventIndex = pgTable("bandori_event_index", {
+  eventernoteEventId: integer("eventernote_event_id").primaryKey(),
+  title: text("title").notNull(),
+  eventDate: date("event_date", { mode: "string" }).notNull(),
+  venue: text("venue"),
+  sourceUrl: text("source_url").notNull(),
+  attendeeCount: integer("attendee_count").notNull().default(0),
+  bandSlugs: jsonb("band_slugs").$type<string[]>().notNull(),
+  bandNames: jsonb("band_names").$type<string[]>().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 

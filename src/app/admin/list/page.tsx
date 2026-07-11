@@ -1,10 +1,10 @@
 import { inArray } from "drizzle-orm";
-import { getDb } from "@/lib/db/core";
 import { BAND_SEEDS } from "@/lib/constants/bands";
+import { getDb } from "@/lib/db/core";
 import { events } from "@/lib/db/schema";
-import { listRecentEventsFromIndex } from "@/lib/eventernote/bandori-event-index";
+import { listRankingEventsFromIndex } from "@/lib/eventernote/bandori-event-index";
 import { readEventVisibilityRules } from "@/lib/events/event-visibility-rules-store";
-import { EventRankingClient } from "./event-ranking-client";
+import { AdminListClient } from "./list-client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,17 +42,14 @@ async function getEventSetlistStatuses(eventIds: number[]) {
   return Object.fromEntries(rows.map((row) => [row.eventernoteEventId, row.setlistStatus]));
 }
 
-export default async function RecentEventPage() {
-  const ranking = await listRecentEventsFromIndex();
+export default async function AdminListPage() {
+  const ranking = await listRankingEventsFromIndex();
   const statusByEventId = await getEventSetlistStatuses(ranking.events.map((event) => event.eventernoteEventId));
   const eventVisibilityRules = await readEventVisibilityRules();
 
   return (
     <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
-      <EventRankingClient
-        eyebrow="Recent"
-        title="近期活动列表"
-        description={`数据来自乐队 Eventernote actor 活动页，写入 bandori_event_index。页面仅显示 ${ranking.filteredFrom} 至 ${ranking.filteredThrough} 的活动，列表按日期倒序显示，同日按参加人数倒序排列，歌单收录状态实时读取数据库。`}
+      <AdminListClient
         generatedAtLabel={formatDateTime(ranking.updatedAt)}
         events={ranking.events}
         bands={BAND_SEEDS.filter((band) => band.groupType === "band").map((band) => ({

@@ -19,6 +19,11 @@ const adminLinks = [
     description: "查看近期 Eventernote 活动与歌单收录状态。",
   },
   {
+    href: "/admin/list",
+    title: "活动列表",
+    description: "浏览全量活动，按年份与乐队筛选，并进入歌单导入/编辑。",
+  },
+  {
     href: "/admin/setlist-import",
     title: "歌单导入",
     description: "按 Eventernote 活动导入 setlist。",

@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { createBandoriUserEventSnapshots } from "@/lib/eventernote/bandori-user-events";
+import type { BandoriEventIndexLookup } from "@/lib/eventernote/bandori-event-index";
 import type { EventernoteEventSnapshot } from "@/lib/eventernote/parser";
+import {
+  getRankingEventDateWindow,
+  getRecentEventDateWindow,
+  toBandoriEventIndexRows,
+} from "@/lib/eventernote/bandori-event-index";
+import type { ActorEventRankingEntry } from "@/lib/eventernote/actor-events";
+import { filterRecentEventEntries } from "@/lib/eventernote/event-ranking-snapshot";
 
 function snapshot(overrides: Partial<EventernoteEventSnapshot>): EventernoteEventSnapshot {
   return {
@@ -15,83 +23,105 @@ function snapshot(overrides: Partial<EventernoteEventSnapshot>): EventernoteEven
   };
 }
 
+function indexEntry(
+  eventernoteEventId: number,
+  bandSlugs: string[],
+  overrides: Partial<BandoriEventIndexLookup> = {},
+): BandoriEventIndexLookup {
+  return {
+    eventernoteEventId,
+    title: "indexed title",
+    eventDate: "2026-01-01",
+    venue: "indexed venue",
+    sourceUrl: `https://www.eventernote.com/events/${eventernoteEventId}`,
+    bandSlugs,
+    ...overrides,
+  };
+}
+
 describe("bandori user event cache", () => {
-  it("keeps only BanG Dream band events and stores matched band slugs instead of raw actors", () => {
-    const cached = createBandoriUserEventSnapshots([
-      snapshot({
-        eventernoteEventId: 420629,
-        actorIds: [14234, 24401, 123456],
-        actorNames: ["Poppin'Party", "Roselia", "Unrelated Artist"],
-      }),
-      snapshot({
-        eventernoteEventId: 396309,
-        actorIds: [59030],
-        actorNames: ["Unrelated Artist"],
-      }),
+  it("keeps only index hits and prefers index metadata over list-page fields", () => {
+    const index = new Map<number, BandoriEventIndexLookup>([
+      [
+        420629,
+        indexEntry(420629, ["poppin-party", "roselia"], {
+          title: "BanG Dream! 合同ライブ",
+          venue: "武蔵野の森総合スポーツプラザ",
+        }),
+      ],
     ]);
+
+    const cached = createBandoriUserEventSnapshots(
+      [
+        snapshot({
+          eventernoteEventId: 420629,
+          title: "wrong title from misaligned list row",
+          venue: "wrong venue",
+          actorIds: [123456],
+          actorNames: ["Unrelated Artist"],
+        }),
+        snapshot({
+          eventernoteEventId: 396309,
+          actorIds: [14234],
+          actorNames: ["Poppin'Party"],
+        }),
+      ],
+      index,
+    );
 
     expect(cached).toEqual([
       {
         eventernoteEventId: 420629,
-        title: "test event",
+        title: "BanG Dream! 合同ライブ",
         eventDate: "2026-01-01",
-        venue: "test venue",
+        venue: "武蔵野の森総合スポーツプラザ",
         matchedBandSlugs: ["poppin-party", "roselia"],
         sourceUrl: "https://www.eventernote.com/events/1",
       },
     ]);
-    expect(JSON.stringify(cached)).not.toContain("Unrelated Artist");
-    expect(JSON.stringify(cached)).not.toContain("123456");
   });
 
-  it("keeps future BanG Dream events so date visibility is decided at query time", () => {
-    const cached = createBandoriUserEventSnapshots([
-      snapshot({
-        eventernoteEventId: 999999,
-        eventDate: "2099-01-01",
-        actorIds: [66346],
-        actorNames: ["MyGO!!!!!"],
-      }),
-    ]);
+  it("drops events missing from the index even when list-page actors look like BanG Dream", () => {
+    const cached = createBandoriUserEventSnapshots(
+      [
+        snapshot({
+          eventernoteEventId: 999999,
+          eventDate: "2099-01-01",
+          actorIds: [66346],
+          actorNames: ["MyGO!!!!!"],
+        }),
+      ],
+      new Map(),
+    );
 
-    expect(cached).toHaveLength(1);
-    expect(cached[0]?.matchedBandSlugs).toEqual(["mygo"]);
+    expect(cached).toEqual([]);
   });
 
-  it("maps representative multi-band and single-band live pages to the correct slugs", () => {
-    const cached = createBandoriUserEventSnapshots([
-      snapshot({
-        eventernoteEventId: 438720,
-        title: "Ave Mujica LIVE TOUR 2026「Exitus」東京公演",
-        actorIds: [70564, 19452, 55045, 37809, 73109, 12490],
-        actorNames: ["Ave Mujica", "佐々木李子", "渡瀬結月", "岡田夢以", "米澤茜", "高尾奏音"],
-      }),
-      snapshot({
-        eventernoteEventId: 452934,
-        title: "Poppin'Party×Roselia 合同ライブ「DREAMS GO ON」",
-        actorIds: [14234, 2806, 14437, 13822, 2777, 5588, 24401, 21127, 1633, 12491, 2751, 42894],
-        actorNames: [
-          "Poppin'Party",
-          "愛美",
-          "大塚紗英",
-          "西本りみ",
-          "大橋彩香",
-          "伊藤彩沙",
-          "Roselia",
-          "相羽あいな",
-          "工藤晴香",
-          "中島由貴",
-          "櫻川めぐ",
-          "志崎樺音",
-        ],
-      }),
-      snapshot({
-        eventernoteEventId: 430842,
-        title: "Poppin’Party New Year LIVE「Happy BanG Year!!」",
-        actorIds: [14234, 2806, 14437, 13822, 2777, 5588],
-        actorNames: ["Poppin'Party", "愛美", "大塚紗英", "西本りみ", "大橋彩香", "伊藤彩沙"],
-      }),
+  it("maps multi-band and single-band lives from index band slugs", () => {
+    const index = new Map<number, BandoriEventIndexLookup>([
+      [438720, indexEntry(438720, ["ave-mujica"], { title: "Ave Mujica LIVE TOUR 2026「Exitus」東京公演" })],
+      [
+        452934,
+        indexEntry(452934, ["poppin-party", "roselia"], {
+          title: "Poppin'Party×Roselia 合同ライブ「DREAMS GO ON」",
+        }),
+      ],
+      [
+        430842,
+        indexEntry(430842, ["poppin-party"], {
+          title: "Poppin’Party New Year LIVE「Happy BanG Year!!」",
+        }),
+      ],
     ]);
+
+    const cached = createBandoriUserEventSnapshots(
+      [
+        snapshot({ eventernoteEventId: 438720, title: "ignored" }),
+        snapshot({ eventernoteEventId: 452934, title: "ignored" }),
+        snapshot({ eventernoteEventId: 430842, title: "ignored" }),
+      ],
+      index,
+    );
 
     expect(cached).toEqual([
       expect.objectContaining({
@@ -107,5 +137,76 @@ describe("bandori user event cache", () => {
         matchedBandSlugs: ["poppin-party"],
       }),
     ]);
+  });
+});
+
+describe("bandori event index rows", () => {
+  it("maps merged actor entries into upsert rows", () => {
+    const entries: ActorEventRankingEntry[] = [
+      {
+        eventernoteEventId: 1,
+        title: "A",
+        eventDate: "2026-01-01",
+        venue: null,
+        attendeeCount: 10,
+        sourceUrl: "https://www.eventernote.com/events/1",
+        bandSlugs: ["poppin-party"],
+        bandNames: ["Poppin'Party"],
+      },
+    ];
+    const now = new Date("2026-07-10T00:00:00.000Z");
+    expect(toBandoriEventIndexRows(entries, now)).toEqual([
+      {
+        eventernoteEventId: 1,
+        title: "A",
+        eventDate: "2026-01-01",
+        venue: null,
+        sourceUrl: "https://www.eventernote.com/events/1",
+        attendeeCount: 10,
+        bandSlugs: ["poppin-party"],
+        bandNames: ["Poppin'Party"],
+        updatedAt: now,
+      },
+    ]);
+  });
+});
+
+describe("ranking/recent date windows from merged events", () => {
+  it("filters ranking through today and recent within the rolling window", () => {
+    const merged: ActorEventRankingEntry[] = [
+      {
+        eventernoteEventId: 2,
+        title: "past",
+        eventDate: "2026-07-01",
+        venue: null,
+        attendeeCount: 5,
+        sourceUrl: "https://www.eventernote.com/events/2",
+        bandSlugs: ["roselia"],
+        bandNames: ["Roselia"],
+      },
+      {
+        eventernoteEventId: 3,
+        title: "near future",
+        eventDate: "2026-07-12",
+        venue: null,
+        attendeeCount: 8,
+        sourceUrl: "https://www.eventernote.com/events/3",
+        bandSlugs: ["mygo"],
+        bandNames: ["MyGO!!!!!"],
+      },
+    ];
+    const now = new Date("2026-07-10T12:00:00+08:00");
+    const { filteredThrough } = getRankingEventDateWindow(now);
+    const rankingIds = merged
+      .filter((event) => event.eventDate <= filteredThrough)
+      .map((event) => event.eventernoteEventId);
+    const recentIds = filterRecentEventEntries(merged, now).map((event) => event.eventernoteEventId);
+
+    expect(getRecentEventDateWindow(now)).toEqual({
+      filteredFrom: "2026-06-10",
+      filteredThrough: "2026-07-17",
+    });
+    expect(rankingIds).toEqual([2]);
+    expect(recentIds.sort()).toEqual([2, 3]);
   });
 });

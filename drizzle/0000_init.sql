@@ -1,15 +1,21 @@
 CREATE TYPE "public"."band_group_type" AS ENUM('band', 'project-common');--> statement-breakpoint
 CREATE TYPE "public"."eventernote_fetch_status" AS ENUM('ok', 'error');--> statement-breakpoint
 CREATE TYPE "public"."setlist_status" AS ENUM('missing', 'partial', 'complete');--> statement-breakpoint
-CREATE TABLE "app_runtime_snapshots" (
-	"snapshot_key" text PRIMARY KEY NOT NULL,
+CREATE TABLE "app_settings" (
+	"key" text PRIMARY KEY NOT NULL,
 	"payload" jsonb NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "app_settings" (
-	"key" text PRIMARY KEY NOT NULL,
-	"payload" jsonb NOT NULL,
+CREATE TABLE "bandori_event_index" (
+	"eventernote_event_id" integer PRIMARY KEY NOT NULL,
+	"title" text NOT NULL,
+	"event_date" date NOT NULL,
+	"venue" text,
+	"source_url" text NOT NULL,
+	"attendee_count" integer DEFAULT 0 NOT NULL,
+	"band_slugs" jsonb NOT NULL,
+	"band_names" jsonb NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint

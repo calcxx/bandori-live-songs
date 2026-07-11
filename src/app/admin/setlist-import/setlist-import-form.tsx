@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import type { SetlistImportActionState } from "./types";
 
 type SetlistImportFormProps = {
@@ -10,6 +10,9 @@ type SetlistImportFormProps = {
     formData: FormData,
   ) => Promise<SetlistImportActionState>;
   defaultEventInput?: string;
+  defaultSetlistText?: string;
+  existingRecord?: boolean;
+  existingEventTitle?: string | null;
 };
 
 const initialState: SetlistImportActionState = {
@@ -17,15 +20,24 @@ const initialState: SetlistImportActionState = {
 };
 
 const numberingPrefixPattern = /^(?:(?:M|EN)\s*\.?\s*\d+|\d+)\s*\.?[\t \u3000]+/iu;
+const overwriteConfirmPrompt = "该活动已有 setlist，确认整场替换？";
 
-export function SetlistImportForm({ action, defaultEventInput = "" }: SetlistImportFormProps) {
+export function SetlistImportForm({
+  action,
+  defaultEventInput = "",
+  defaultSetlistText = "",
+  existingRecord = false,
+  existingEventTitle = null,
+}: SetlistImportFormProps) {
   const [state, formAction, pending] = useActionState(action, initialState);
   const [eventInput, setEventInput] = useState(defaultEventInput);
-  const [setlistText, setSetlistText] = useState("");
+  const [setlistText, setSetlistText] = useState(defaultSetlistText);
   const [spotifyUrl, setSpotifyUrl] = useState("");
   const [spotifyImporting, setSpotifyImporting] = useState(false);
   const [spotifyMessage, setSpotifyMessage] = useState<string | null>(null);
   const [spotifyError, setSpotifyError] = useState<string | null>(null);
+
+  const treatsAsExisting = existingRecord || Boolean(state.existingRecord);
 
   function handleStripNumbering() {
     setSetlistText((prev) =>
@@ -96,7 +108,7 @@ export function SetlistImportForm({ action, defaultEventInput = "" }: SetlistImp
         },
         body: JSON.stringify({ url: trimmedSpotifyUrl }),
       });
-      const payload = await response.json() as {
+      const payload = (await response.json()) as {
         error?: string;
         sourceTitle?: string;
         tracks?: string[];
@@ -121,6 +133,28 @@ export function SetlistImportForm({ action, defaultEventInput = "" }: SetlistImp
     }
   }
 
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    const form = event.currentTarget;
+    const confirmInput = form.elements.namedItem("confirmOverwrite");
+    if (!(confirmInput instanceof HTMLInputElement)) {
+      return;
+    }
+
+    if (!treatsAsExisting) {
+      confirmInput.value = "0";
+      return;
+    }
+
+    const confirmed = window.confirm(overwriteConfirmPrompt);
+    if (!confirmed) {
+      event.preventDefault();
+      confirmInput.value = "0";
+      return;
+    }
+
+    confirmInput.value = "1";
+  }
+
   const suggestedCount = state.mismatchLines?.filter((item) => Boolean(item.suggestedValue)).length ?? 0;
 
   return (
@@ -130,9 +164,16 @@ export function SetlistImportForm({ action, defaultEventInput = "" }: SetlistImp
         <p className="text-sm text-ink-soft">
           填写 Eventernote 链接或数字 event 号；歌单每行一首。点击提交会先校验，全部匹配后自动写入。
         </p>
+        {existingRecord ? (
+          <p className="rounded-xl border border-amber-500/40 bg-amber-500/15 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
+            已加载数据库中的 setlist
+            {existingEventTitle ? `（${existingEventTitle}）` : ""}。提交前将弹出确认，确认后整场替换。
+          </p>
+        ) : null}
       </div>
 
-      <form action={formAction} className="flex flex-col gap-4">
+      <form action={formAction} onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <input type="hidden" name="confirmOverwrite" defaultValue="0" />
         <label className="flex flex-col gap-2 text-sm text-foreground">
           Eventernote 链接或 event 号
           <input
@@ -200,7 +241,7 @@ export function SetlistImportForm({ action, defaultEventInput = "" }: SetlistImp
           disabled={pending}
           className="inline-flex min-h-11 items-center justify-center rounded-xl bg-foreground px-5 font-medium text-background transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {pending ? "提交中..." : "提交"}
+          {pending ? "提交中..." : treatsAsExisting ? "确认并替换" : "提交"}
         </button>
       </form>
 
@@ -251,7 +292,9 @@ export function SetlistImportForm({ action, defaultEventInput = "" }: SetlistImp
                   <div className="flex flex-wrap items-center gap-2 text-xs text-black dark:text-rose-50/90">
                     <span>
                       建议改为: {item.suggestedValue}
-                      {typeof item.suggestionScore === "number" ? ` · 相似度 ${(item.suggestionScore * 100).toFixed(0)}%` : ""}
+                      {typeof item.suggestionScore === "number"
+                        ? ` · 相似度 ${(item.suggestionScore * 100).toFixed(0)}%`
+                        : ""}
                     </span>
                     <button
                       type="button"

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ActorEventRankingEntry } from "@/lib/eventernote/actor-events";
+import { getRecentEventDateWindow, getRankingEventDateWindow } from "@/lib/eventernote/bandori-event-index";
 import {
-  buildRecentEventSnapshot,
   filterRecentEventEntries,
   sortEventRankingEntries,
   sortRecentEventEntries,
@@ -84,22 +84,13 @@ describe("sortEventRankingEntries", () => {
   });
 });
 
-describe("buildRecentEventSnapshot", () => {
-  it("stores the active date window boundaries in the snapshot", () => {
-    const snapshot = buildRecentEventSnapshot(
-      {
-        version: 4,
-        generatedAt: "2026-05-01T03:00:00.000Z",
-        sourceBandCount: 12,
-        scannedEventCount: 30,
-        mergedEventCount: 5,
-        events: sampleEvents,
-      },
-      new Date("2026-05-01T12:00:00.000+09:00"),
-    );
-
-    expect(snapshot.filteredFrom).toBe("2026-04-01");
-    expect(snapshot.filteredThrough).toBe("2026-05-08");
-    expect(snapshot.events.map((event) => event.eventernoteEventId)).toEqual([3, 2, 1]);
+describe("event date windows", () => {
+  it("computes ranking and recent windows from Shanghai calendar date", () => {
+    const now = new Date("2026-05-01T12:00:00.000+09:00");
+    expect(getRankingEventDateWindow(now)).toEqual({ filteredThrough: "2026-05-01" });
+    expect(getRecentEventDateWindow(now)).toEqual({
+      filteredFrom: "2026-04-01",
+      filteredThrough: "2026-05-08",
+    });
   });
 });

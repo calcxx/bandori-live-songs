@@ -16,8 +16,8 @@
 
 **管理后台**（`/admin`，需 `SETLIST_IMPORT_KEY`）
 
-- 近期活动：各乐队 Eventernote 快照与歌单补录入口
-- 歌单导入：按活动 ID 或链接录入 setlist；支持 Spotify 播放列表辅助
+- 近期活动 / 活动列表：来自演员页索引的活动浏览；列表支持年份与乐队复选筛选
+- 歌单导入：按活动 ID 或链接录入或整场替换 setlist；支持 Spotify 播放列表辅助
 - 歌曲导入：向曲库批量添加新曲
 - 活动屏蔽规则：隐藏见面会、上映会等非演唱类活动
 
@@ -32,7 +32,8 @@ flowchart LR
 
 - **Eventernote** 提供用户参加了哪些活动；通过 HTML 解析抓取。
 - **本地数据库** 维护原创曲曲库（种子数据来自 `discography-catalog.json`）与人工录入的 setlist。只有歌单已录入的活动才计入「听过」。
-- 活动按标题与参演乐队规则匹配到各 `band_slug`；曲名导入时做规范化后与曲库匹配。
+- 用户活动页只提供参加过的 eventId；是否邦邦、属于哪支乐队由 `bandori_event_index`（演员页权威索引）判定，规避列表页出演者错位。
+- 曲名导入时做规范化后与曲库匹配。
 - 用户活动缓存在 Postgres，按远程活动总数变化失效，而非固定时间 TTL；详见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
 ## 开发

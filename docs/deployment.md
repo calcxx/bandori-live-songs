@@ -65,7 +65,7 @@ npm run start
 
 ## 6. 定时任务
 
-`/api/cron/event-ranking` 用于刷新近期活动排名缓存。使用系统 cron、GitHub Actions 或云平台调度器定期请求：
+`/api/cron/event-ranking` 用于刷新 `bandori_event_index`（各乐队演员页活动索引）。使用系统 cron、GitHub Actions 或云平台调度器定期请求：
 
 ```bash
 curl -H "Authorization: Bearer $CRON_SECRET" https://your-domain/api/cron/event-ranking

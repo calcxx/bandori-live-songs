@@ -1,4 +1,4 @@
-import { eq, inArray } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import { updateTag } from "next/cache";
 import { getAdminAuthStatus } from "@/lib/admin/server-auth";
 import { getDb } from "@/lib/db/core";
@@ -8,7 +8,7 @@ import { findClosestSongTitle } from "@/lib/music/song-match-suggestions";
 import { stripTrackIndex } from "@/lib/music/title-utils";
 import { refreshSongLiveState } from "@/lib/stats/refresh-song-live-state";
 import { SetlistImportForm } from "./setlist-import-form";
-import type { SetlistImportActionState } from "./types";
+import { formatSetlistEntriesText, type SetlistImportActionState } from "./types";
 
 type ParsedSetlistLine = {
   lineNumber: number;
@@ -17,7 +17,7 @@ type ParsedSetlistLine = {
 
 type EventMeta = EventernoteEventMeta;
 
-const existingEventConflictMessage = "该 Eventernote 活动已存在数据库记录，已拒绝提交以避免覆盖。";
+const overwriteConfirmRequiredMessage = "该活动已有 setlist，请确认后整场替换。";
 
 function parseEventernoteEventId(input: string) {
   const trimmed = input.trim();
@@ -55,10 +55,11 @@ function parseSetlistLines(input: string) {
     .filter((line) => line.rawTitle.length > 0);
 }
 
-async function findExistingEventMeta(eventernoteEventId: number) {
+async function findExistingEvent(eventernoteEventId: number) {
   const db = getDb();
   const [existing] = await db
     .select({
+      id: events.id,
       eventernoteEventId: events.eventernoteEventId,
       title: events.title,
       eventDate: events.eventDate,
@@ -69,6 +70,19 @@ async function findExistingEventMeta(eventernoteEventId: number) {
     .limit(1);
 
   return existing ?? null;
+}
+
+async function loadExistingSetlistText(eventId: number) {
+  const db = getDb();
+  const rows = await db
+    .select({
+      rawTitle: setlistEntries.rawTitle,
+    })
+    .from(setlistEntries)
+    .where(eq(setlistEntries.eventId, eventId))
+    .orderBy(asc(setlistEntries.orderIndex));
+
+  return formatSetlistEntriesText(rows.map((row) => row.rawTitle));
 }
 
 async function findMismatchLines(lines: ParsedSetlistLine[]) {
@@ -118,6 +132,7 @@ async function submitSetlistImport(
 
   const eventInput = String(formData.get("eventInput") ?? "").trim();
   const setlistText = String(formData.get("setlistText") ?? "");
+  const confirmOverwrite = String(formData.get("confirmOverwrite") ?? "") === "1";
   const eventernoteEventId = parseEventernoteEventId(eventInput);
 
   if (!eventernoteEventId) {
@@ -127,15 +142,16 @@ async function submitSetlistImport(
     };
   }
 
-  const existingEvent = await findExistingEventMeta(eventernoteEventId);
-  if (existingEvent) {
+  const existingEvent = await findExistingEvent(eventernoteEventId);
+  if (existingEvent && !confirmOverwrite) {
     return {
       status: "error",
       eventernoteEventId,
       eventTitle: existingEvent.title,
       eventDate: existingEvent.eventDate,
       venue: existingEvent.venue,
-      message: existingEventConflictMessage,
+      existingRecord: true,
+      message: overwriteConfirmRequiredMessage,
     };
   }
 
@@ -145,6 +161,7 @@ async function submitSetlistImport(
     return {
       status: "error",
       eventernoteEventId,
+      existingRecord: Boolean(existingEvent),
       message: "歌单不能为空，请至少输入一首歌。",
     };
   }
@@ -156,6 +173,7 @@ async function submitSetlistImport(
     return {
       status: "error",
       eventernoteEventId,
+      existingRecord: Boolean(existingEvent),
       message: error instanceof Error ? error.message : "获取活动信息失败。",
     };
   }
@@ -168,13 +186,39 @@ async function submitSetlistImport(
       eventTitle: eventMeta.title,
       eventDate: eventMeta.eventDate,
       venue: eventMeta.venue,
+      existingRecord: Boolean(existingEvent),
       message: `存在 ${mismatchLines.length} 行未匹配。可直接采用建议替换后重新提交。`,
       mismatchLines,
     };
   }
 
   const db = getDb();
-  const createdEvent = await db.transaction(async (tx) => {
+  const saved = await db.transaction(async (tx) => {
+    if (existingEvent) {
+      await tx
+        .update(events)
+        .set({
+          title: eventMeta.title,
+          eventDate: eventMeta.eventDate,
+          venue: eventMeta.venue,
+          setlistStatus: "complete",
+          updatedAt: new Date(),
+        })
+        .where(eq(events.id, existingEvent.id));
+
+      await tx.delete(setlistEntries).where(eq(setlistEntries.eventId, existingEvent.id));
+
+      await tx.insert(setlistEntries).values(
+        parsedLines.map((line, index) => ({
+          eventId: existingEvent.id,
+          orderIndex: index + 1,
+          rawTitle: line.rawTitle,
+        })),
+      );
+
+      return { id: existingEvent.id, overwritten: true as const };
+    }
+
     const [eventRecord] = await tx
       .insert(events)
       .values({
@@ -201,17 +245,18 @@ async function submitSetlistImport(
       })),
     );
 
-    return eventRecord;
+    return { id: eventRecord.id, overwritten: false as const };
   });
 
-  if (!createdEvent) {
+  if (!saved) {
     return {
       status: "error",
       eventernoteEventId,
       eventTitle: eventMeta.title,
       eventDate: eventMeta.eventDate,
       venue: eventMeta.venue,
-      message: existingEventConflictMessage,
+      existingRecord: true,
+      message: overwriteConfirmRequiredMessage,
     };
   }
 
@@ -226,7 +271,10 @@ async function submitSetlistImport(
     eventDate: eventMeta.eventDate,
     venue: eventMeta.venue,
     submittedCount: parsedLines.length,
-    message: `校验通过并已导入 ${parsedLines.length} 首歌。`,
+    existingRecord: saved.overwritten,
+    message: saved.overwritten
+      ? `已整场替换并写入 ${parsedLines.length} 首歌。`
+      : `校验通过并已导入 ${parsedLines.length} 首歌。`,
   };
 }
 
@@ -240,11 +288,31 @@ type SetlistImportPageProps = {
 export default async function SetlistImportPage({ searchParams }: SetlistImportPageProps) {
   const { event = "", eventInput = "" } = await searchParams;
   const queryEventInput = eventInput.trim() || event.trim();
-  const defaultEventInput = parseEventernoteEventId(queryEventInput) ? queryEventInput : "";
+  const parsedEventId = parseEventernoteEventId(queryEventInput);
+  const defaultEventInput = parsedEventId ? queryEventInput : "";
+
+  let defaultSetlistText = "";
+  let existingRecord = false;
+  let existingEventTitle: string | null = null;
+
+  if (parsedEventId) {
+    const existingEvent = await findExistingEvent(parsedEventId);
+    if (existingEvent) {
+      existingRecord = true;
+      existingEventTitle = existingEvent.title;
+      defaultSetlistText = await loadExistingSetlistText(existingEvent.id);
+    }
+  }
 
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6">
-      <SetlistImportForm action={submitSetlistImport} defaultEventInput={defaultEventInput} />
+      <SetlistImportForm
+        action={submitSetlistImport}
+        defaultEventInput={defaultEventInput}
+        defaultSetlistText={defaultSetlistText}
+        existingRecord={existingRecord}
+        existingEventTitle={existingEventTitle}
+      />
     </main>
   );
 }

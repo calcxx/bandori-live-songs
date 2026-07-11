@@ -14,4 +14,9 @@ export type SetlistImportActionState = {
   venue?: string | null;
   mismatchLines?: MismatchLine[];
   submittedCount?: number;
+  existingRecord?: boolean;
 };
+
+export function formatSetlistEntriesText(titles: string[]) {
+  return titles.join("\n");
+}

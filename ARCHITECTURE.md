@@ -109,14 +109,15 @@ sequenceDiagram
         S->>EN: fetchAllUserEvents(userId)
         EN->>EN: 分页抓取 HTML (带重试)
         EN-->>S: EventernoteEventSnapshot[]
-        S->>S: createBandoriUserEventSnapshots()
+        S->>DB: SELECT bandori_event_index WHERE eventId IN (...)
+        S->>S: createBandoriUserEventSnapshots(index lookup)
         S->>DB: UPSERT eventernote_user_cache
     else 远程总数与缓存不一致
         Note over S: 先返回缓存 activities，后台异步全量刷新
     end
 
     S->>S: buildMatchedEvents()
-    Note over S: 活动 × 乐队匹配 + Setlist 关联
+    Note over S: 已匹配活动 × Setlist 关联
     S->>S: unstable_cache(matched-events)
     S-->>P: UserSongStatsResult
     P-->>U: 渲染 HomePageClient
@@ -134,12 +135,14 @@ app/
 ├── api/
 │   ├── song-events/route.ts          # 歌曲关联的活动列表 API
 │   ├── user-refresh-status/route.ts  # 用户缓存刷新状态查询
-│   └── cron/event-ranking/route.ts   # 定时任务：活动排名快照
+│   ├── setlist-export/route.ts       # Setlist 导出 API
+│   └── cron/event-ranking/route.ts   # 定时任务：刷新 bandori_event_index
 └── admin/
-    ├── recent/                       # 管理后台 — 近期活动
+    ├── list/                         # 管理后台 — 活动列表（查 index，年份/乐队复选）
+    ├── recent/                       # 管理后台 — 近期活动（查 index）
     ├── rules/                        # 管理后台 — 活动可见性规则
     ├── songs-import/                 # 管理后台 — 歌曲导入
-    └── setlist-import/               # 管理后台 — Setlist 导入
+    └── setlist-import/               # 管理后台 — Setlist 导入/编辑
 ```
 
 **`page.tsx`** 是核心入口，采用 RSC 模式在服务端完成全部数据查询后，将结果序列化传递给客户端组件 `HomePageClient`。
@@ -206,23 +209,27 @@ stats/
 eventernote/
 ├── client.ts                # HTTP 客户端：分页抓取、重试、超时
 ├── parser.ts                # 纯 HTML 解析（Cheerio）：可独立测试
-├── bandori-user-events.ts   # 活动 → 乐队匹配转换
+├── bandori-user-events.ts   # 用户活动 eventId × 索引 → 乐队匹配
+├── bandori-event-index.ts   # bandori_event_index 读写
 ├── actor-events.ts          # 演员活动查询
 ├── event-meta.ts            # 活动元数据
-├── event-ranking-snapshot.ts # 活动排名快照
-├── match-rules.ts           # 活动匹配规则
+├── event-ranking-snapshot.ts # 演员页抓取 → upsert bandori_event_index
+├── match-rules.ts           # 活动日期可见性规则
 └── user-id.ts               # 用户 ID 校验与规范化
 ```
 
 数据流：
 ```
-Eventernote HTML → parser.ts (纯解析) → client.ts (HTTP+重试) → bandori-user-events.ts (乐队匹配)
+用户活动页 HTML → parser/client → eventIds
+演员活动页（定时刷新）→ merge → bandori_event_index
+admin list/recent → 按日期窗口查询 bandori_event_index
+eventIds ∩ index → bandori-user-events.ts（未命中丢弃；不用列表页出演者）
 ```
 
 - `parser.ts`：纯函数，接收 HTML 字符串，返回结构化数据。与 I/O 完全解耦，便于单元测试
 - `client.ts`：负责 HTTP 请求、分页调度、指数退避重试（最多 3 次）、超时控制（单页 10s / 总计 30s）
-- `bandori-user-events.ts`：将 Eventernote 活动通过 `eventernoteActorId` 映射到 BanG Dream! 乐队
-
+- `bandori-user-events.ts`：用 `bandori_event_index`（演员页权威）按 eventId 匹配乐队；用户列表页的 `actorIds` 不参与匹配（规避 Eventernote 列表错位）
+- `bandori-event-index.ts` / cron：抓取各乐队演员页并 upsert 索引；admin 页直接按日期筛选查询该表
 #### 6.3.3 `bandori/` — 曲目库
 
 ```
@@ -308,6 +315,16 @@ erDiagram
         timestamp refreshing_started_at
         int remote_event_count
     }
+    bandori_event_index {
+        int eventernote_event_id PK
+        text title
+        date event_date
+        text venue
+        text source_url
+        int attendee_count
+        jsonb band_slugs
+        jsonb band_names
+    }
 ```
 
 ### 6.4 `src/data/` — 静态数据
@@ -325,8 +342,8 @@ scripts/
 ├── seed-bands.ts                          # 初始化乐队数据
 ├── seed-all.ts                            # 全量数据初始化
 ├── import-discography.ts                  # 从内置 JSON 导入曲目
-├── refresh-event-ranking.ts               # 刷新活动排名快照
-├── refresh-event-recent.ts                # 刷新近期活动
+├── refresh-event-ranking.ts               # 刷新 bandori_event_index（演员页全量）
+├── refresh-event-recent.ts                # 同上入口（兼容旧脚本名）
 ├── backfill-event-meta.ts                 # 回填活动元数据
 ├── backfill-eventernote-user-profiles.ts  # 回填用户档案
 └── cleanup-event-title-tags.ts            # 清理活动标题标签
@@ -339,7 +356,7 @@ tests/
 ├── aggregate.test.ts                    # 统计聚合逻辑
 ├── bandori-user-event-cache.test.ts     # 用户活动缓存
 ├── event-match-rules.test.ts            # 活动匹配规则
-├── event-ranking-snapshot.test.ts       # 活动排名快照
+├── event-ranking-snapshot.test.ts       # 索引刷新窗口 / 排序
 ├── event-visibility.test.ts             # 活动可见性过滤
 ├── eventernote-actor-events.test.ts     # 演员活动
 ├── eventernote-cache-policy.test.ts     # 缓存策略

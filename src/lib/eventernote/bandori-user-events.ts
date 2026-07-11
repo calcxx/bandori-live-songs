@@ -1,12 +1,6 @@
 import { z } from "zod";
-import { BAND_SEEDS } from "@/lib/constants/bands";
 import type { EventernoteEventSnapshot } from "./parser";
-
-const bandByActorId = new Map(
-  BAND_SEEDS.flatMap((band) =>
-    band.eventernoteActorId === null ? [] : [[band.eventernoteActorId, band] as const],
-  ),
-);
+import type { BandoriEventIndexLookup } from "./bandori-event-index";
 
 export const bandoriUserEventSnapshotSchema = z.object({
   eventernoteEventId: z.number().int(),
@@ -19,26 +13,26 @@ export const bandoriUserEventSnapshotSchema = z.object({
 
 export type BandoriUserEventSnapshot = z.infer<typeof bandoriUserEventSnapshotSchema>;
 
-export function createBandoriUserEventSnapshots(events: EventernoteEventSnapshot[]) {
+/**
+ * Match user-page events to BanG Dream bands via actor-page index (eventId → bands).
+ * Misses are dropped; list-page actorIds are not used (upstream misalignment bug).
+ */
+export function createBandoriUserEventSnapshots(
+  events: EventernoteEventSnapshot[],
+  indexByEventId: Map<number, BandoriEventIndexLookup>,
+) {
   return events.flatMap((event) => {
-    const matchedBandSlugs = [
-      ...new Set(
-        event.actorIds
-          .map((actorId) => bandByActorId.get(actorId)?.slug)
-          .filter((slug): slug is string => Boolean(slug)),
-      ),
-    ];
-
-    if (matchedBandSlugs.length === 0) {
+    const indexed = indexByEventId.get(event.eventernoteEventId);
+    if (!indexed || indexed.bandSlugs.length === 0) {
       return [];
     }
 
     return bandoriUserEventSnapshotSchema.parse({
       eventernoteEventId: event.eventernoteEventId,
-      title: event.title,
-      eventDate: event.eventDate,
-      venue: event.venue,
-      matchedBandSlugs,
+      title: indexed.title || event.title,
+      eventDate: indexed.eventDate || event.eventDate,
+      venue: indexed.venue ?? event.venue,
+      matchedBandSlugs: [...new Set(indexed.bandSlugs)],
       sourceUrl: event.sourceUrl,
     });
   });

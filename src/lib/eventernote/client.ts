@@ -18,7 +18,7 @@ const eventernoteRetryBaseDelayMs = 400;
 
 // Bump this whenever cached Bandori event snapshots become semantically stale,
 // including actor-id mapping updates in BAND_SEEDS.
-export const eventernoteUserEventsParserVersion = 4;
+export const eventernoteUserEventsParserVersion = 5;
 
 export class EventernoteUserNotFoundError extends Error {
   constructor(userId: string) {
