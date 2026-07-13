@@ -40,9 +40,9 @@ export const cnCopy = {
   heardProgress: (heardCount: number, totalCount: number) => `已听 ${heardCount} / ${totalCount}`,
   expandSongsAria: "展开歌名列表",
   collapseSongsAria: "收起歌名列表",
-  relatedEventsLabel: "对应场次",
+  relatedEventsLabel: (count: number) => `已演唱 ${count} 次`,
   loadingEvents: "正在载入场次…",
-  noSongEvents: "当前已收录歌单里还没有这首歌的场次。",
+  noSongEvents: "还没有这首歌的演唱记录",
   eventCoverageTitle: "活动与歌单覆盖",
   eventCoverageNote:
     "※下方内容显示的是该用户参加过的活动。",

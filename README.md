@@ -2,6 +2,8 @@
 
 输入 [Eventernote](https://www.eventernote.com) 用户 ID，对照本地 BanG Dream! 曲库与歌单数据，统计「听过哪些原创曲、哪些还没在现场听到」，并展示各场活动的歌单收录情况。
 
+欢迎在本仓库用 [Issue](https://github.com/calcxx/bandori-live-songs/issues) 提交网站使用反馈。维护者会看到并回复；线上站点的修改可能不会立刻同步回这份开源代码。
+
 更完整的模块说明见 [ARCHITECTURE.md](ARCHITECTURE.md)，部署步骤见 [docs/deployment.md](docs/deployment.md)。
 
 ## 功能
@@ -20,6 +22,7 @@
 - 歌单导入：按活动 ID 或链接录入或整场替换 setlist；支持 Spotify 播放列表辅助
 - 歌曲导入：向曲库批量添加新曲
 - 活动屏蔽规则：隐藏见面会、上映会等非演唱类活动
+- 用户缓存：只读浏览 `eventernote_user_cache` 抓取状态与活动数
 
 ## 设计概要
 
@@ -34,7 +37,7 @@ flowchart LR
 - **本地数据库** 维护原创曲曲库（种子数据来自 `discography-catalog.json`）与人工录入的 setlist。只有歌单已录入的活动才计入「听过」。
 - 用户活动页只提供参加过的 eventId；是否邦邦、属于哪支乐队由 `bandori_event_index`（演员页权威索引）判定，规避列表页出演者错位。
 - 曲名导入时做规范化后与曲库匹配。
-- 用户活动缓存在 Postgres，按远程活动总数变化失效，而非固定时间 TTL；详见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+- 用户活动缓存在 Postgres：以远程活动总数变化为主失效条件；总数未变但距上次抓取超过 1 天时也会静默后台刷新。详见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
 ## 开发
 

@@ -162,34 +162,38 @@ export function BandSummaryCard({
 
                 {isActive ? (
                   <div className="absolute left-0 top-full z-20 mt-2 w-full min-w-0 rounded-[1rem] border border-border-soft bg-panel px-3 py-3 sm:min-w-[22rem]">
-                    <p className="text-xs text-ink-soft">{localeCopy.relatedEventsLabel}</p>
                     {relatedEvents.length > 0 ? (
-                      <div className="mt-2 space-y-2">
-                        {relatedEvents.map((event) => (
-                          <a
-                            key={`${song.id}-${event.eventernoteEventId}`}
-                            href={event.sourceUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="block text-sm transition hover:opacity-80"
-                            style={
-                              attendedEventIds.has(event.eventernoteEventId)
-                                ? {
-                                    color: textColor,
-                                  }
-                                : undefined
-                            }
-                          >
-                            <span className="font-medium">{event.eventDate}</span>
-                            <span className="mx-1.5 text-ink-soft">·</span>
-                            <span>{event.title}</span>
-                          </a>
-                        ))}
-                      </div>
+                      <>
+                        <p className="text-xs text-ink-soft">
+                          {localeCopy.relatedEventsLabel(relatedEvents.length)}
+                        </p>
+                        <div className="mt-2 space-y-2">
+                          {relatedEvents.map((event) => (
+                            <a
+                              key={`${song.id}-${event.eventernoteEventId}`}
+                              href={event.sourceUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="block text-sm transition hover:opacity-80"
+                              style={
+                                attendedEventIds.has(event.eventernoteEventId)
+                                  ? {
+                                      color: textColor,
+                                    }
+                                  : undefined
+                              }
+                            >
+                              <span className="font-medium">{event.eventDate}</span>
+                              <span className="mx-1.5 text-ink-soft">·</span>
+                              <span>{event.title}</span>
+                            </a>
+                          ))}
+                        </div>
+                      </>
                     ) : !bandLoaded || isBandLoading ? (
-                      <p className="mt-2 text-sm text-ink-soft">{localeCopy.loadingEvents}</p>
+                      <p className="text-sm text-ink-soft">{localeCopy.loadingEvents}</p>
                     ) : (
-                      <p className="mt-2 text-sm text-ink-soft">{localeCopy.noSongEvents}</p>
+                      <p className="text-sm text-ink-soft">{localeCopy.noSongEvents}</p>
                     )}
                   </div>
                 ) : null}

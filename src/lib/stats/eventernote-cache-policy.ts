@@ -2,6 +2,8 @@ import type { eventernoteUserCache } from "@/lib/db/schema";
 
 type EventernoteUserCacheRow = typeof eventernoteUserCache.$inferSelect;
 
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
 export type EventernoteCacheDisposition =
   | {
       mode: "warm-and-refresh";
@@ -19,6 +21,7 @@ export type EventernoteCacheDisposition =
 export function getEventernoteCacheDisposition(
   cacheRow: EventernoteUserCacheRow | null,
   remoteEventCount: number | null,
+  now: Date = new Date(),
 ): EventernoteCacheDisposition {
   if (!cacheRow) {
     return {
@@ -52,8 +55,15 @@ export function getEventernoteCacheDisposition(
     };
   }
 
-  // Count unchanged — cache is still fresh.
+  // Count unchanged — still refresh silently if last fetch is older than 1 day.
   if (remoteEventCount === storedCount) {
+    if (now.getTime() - new Date(cacheRow.lastFetchedAt).getTime() > ONE_DAY_MS) {
+      return {
+        mode: "serve-stale-and-refresh",
+        staleCacheUsed: true,
+      };
+    }
+
     return {
       mode: "serve-cached",
       staleCacheUsed: cacheRow.fetchStatus === "error",

@@ -38,6 +38,11 @@ const adminLinks = [
     title: "活动屏蔽规则",
     description: "编辑无歌曲活动的屏蔽词和 Eventernote event ID。",
   },
+  {
+    href: "/admin/user-cache",
+    title: "用户缓存",
+    description: "查看 eventernote_user_cache 的抓取状态与活动数。",
+  },
 ];
 
 async function submitAdminLogin(

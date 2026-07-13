@@ -112,7 +112,7 @@ sequenceDiagram
         S->>DB: SELECT bandori_event_index WHERE eventId IN (...)
         S->>S: createBandoriUserEventSnapshots(index lookup)
         S->>DB: UPSERT eventernote_user_cache
-    else 远程总数与缓存不一致
+    else 远程总数与缓存不一致，或距上次抓取超过 1 天
         Note over S: 先返回缓存 activities，后台异步全量刷新
     end
 
@@ -142,7 +142,8 @@ app/
     ├── recent/                       # 管理后台 — 近期活动（查 index）
     ├── rules/                        # 管理后台 — 活动可见性规则
     ├── songs-import/                 # 管理后台 — 歌曲导入
-    └── setlist-import/               # 管理后台 — Setlist 导入/编辑
+    ├── setlist-import/               # 管理后台 — Setlist 导入/编辑
+    └── user-cache/                   # 管理后台 — 用户缓存只读浏览
 ```
 
 **`page.tsx`** 是核心入口，采用 RSC 模式在服务端完成全部数据查询后，将结果序列化传递给客户端组件 `HomePageClient`。
@@ -179,15 +180,14 @@ stats/
 ├── catalog-cache.ts             # 曲目库缓存 (unstable_cache)
 ├── build-matched-events.ts      # 活动 × 乐队 × Setlist 匹配
 ├── aggregate.ts                 # 前端聚合逻辑 (纯函数)
-├── eventernote-cache-policy.ts  # 缓存策略：活动数比对 / 刷新 / 租约
+├── eventernote-cache-policy.ts  # 缓存策略：活动数比对 / 日龄静默刷新 / 租约
 ├── song-events-cache.ts         # 歌曲关联活动缓存
-├── user-cache-maintenance.ts    # 用户缓存维护
 └── refresh-song-live-state.ts   # 刷新歌曲现场演出状态
 ```
 
 **`get-user-song-stats.ts`** 是整个应用的核心编排函数，职责：
 1. 并行获取曲目库和用户缓存
-2. 判断缓存状态（缺失 / 远程活动数变化 / 解析器版本过旧 / 手动刷新）
+2. 判断缓存状态（缺失 / 远程活动数变化 / 距上次抓取超 1 天 / 解析器版本过旧 / 手动刷新）
 3. 决定是否触发后台刷新（`after()` 调度）
 4. 调用 `buildMatchedEvents` 完成活动-歌曲匹配
 5. 返回 `UserSongStatsResult` 联合类型
@@ -195,10 +195,12 @@ stats/
 缓存策略（**非固定时间 TTL**；`expires_at` 列保留但当前写入为 `null`）：
 
 - 每次查询先轻量请求 Eventernote 用户活动页，解析**远程活动总数** `remoteEventCount`，与库中 `eventernote_user_cache.remote_event_count` 比对。
-- **总数相同**：视为缓存仍有效，直接返回已存 `activities`。
+- **总数相同且距上次抓取不足 1 天**：视为缓存仍有效，直接返回已存 `activities`。
+- **总数相同但距上次抓取超过 1 天**：立即返回旧 `activities`，并静默后台全量刷新。
 - **总数不同**：立即返回旧 `activities`（`staleCacheUsed: true`），并后台触发全量分页抓取更新缓存（stale-while-revalidate）。
 - **无缓存行**：返回 warming，执行全量抓取初始化。
 - **无法取得远程总数**（站点异常等）：不触发刷新，尽量返回已有缓存。
+- 管理页 `/admin/user-cache` 可只读浏览缓存行（用户名 / 昵称 / 抓取状态 / 时间 / 远程活动数）。
 - **解析器版本**（`parserVersion`）升级时：同步全量刷新。
 - **用户手动刷新**（`?refresh=1` 或 `awaitFreshAfter`）：按 inline/background 模式强制刷新。
 - 使用数据库行级租约（`refreshingStartedAt`，5 分钟）与进程内去重，防止同一用户并发全量抓取。
@@ -387,12 +389,12 @@ tests/
 graph LR
     subgraph "缓存层级"
         L1["Next.js unstable_cache<br/>曲目库 5min / 匹配结果 5min"]
-        L2["Postgres eventernote_user_cache<br/>按远程活动数失效"]
+        L2["Postgres eventernote_user_cache<br/>活动数变化或超过 1 天静默刷新"]
         L3["Static JSON (src/data/)<br/>曲目库快照"]
     end
 
     subgraph "刷新策略"
-        SWR["Stale-While-Revalidate<br/>活动数变化时先返回旧数据再刷新"]
+        SWR["Stale-While-Revalidate<br/>活动数变化或日龄超限时先返回旧数据再刷新"]
         Lease["数据库行级租约<br/>防止并发刷新"]
         Dedup["进程内去重<br/>同一用户仅一个 in-flight 请求"]
     end

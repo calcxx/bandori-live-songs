@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { getEventernoteCacheDisposition } from "@/lib/stats/eventernote-cache-policy";
 
+const now = new Date("2026-04-20T12:00:00.000Z");
+
 describe("getEventernoteCacheDisposition", () => {
   it("warms cache in the background when no cache row exists", () => {
-    expect(getEventernoteCacheDisposition(null, 100)).toEqual({
+    expect(getEventernoteCacheDisposition(null, 100, now)).toEqual({
       mode: "warm-and-refresh",
       staleCacheUsed: false,
     });
@@ -26,10 +28,36 @@ describe("getEventernoteCacheDisposition", () => {
           remoteEventCount: 100,
         },
         100,
+        now,
       ),
     ).toEqual({
       mode: "serve-cached",
       staleCacheUsed: false,
+    });
+  });
+
+  it("serves stale cache and refreshes when last fetch is older than 1 day", () => {
+    expect(
+      getEventernoteCacheDisposition(
+        {
+          userId: "revast",
+          displayId: "revast",
+          displayName: null,
+          fetchStatus: "ok",
+          parserVersion: 2,
+          activities: [{ eventernoteEventId: 1, title: "test", eventDate: "2026-01-01", venue: null, matchedBandSlugs: ["ppp"], sourceUrl: "https://example.com" }],
+          errorMessage: null,
+          lastFetchedAt: new Date("2026-04-19T11:59:00.000Z"),
+          expiresAt: null,
+          refreshingStartedAt: null,
+          remoteEventCount: 100,
+        },
+        100,
+        now,
+      ),
+    ).toEqual({
+      mode: "serve-stale-and-refresh",
+      staleCacheUsed: true,
     });
   });
 
@@ -50,6 +78,7 @@ describe("getEventernoteCacheDisposition", () => {
           remoteEventCount: 95,
         },
         100,
+        now,
       ),
     ).toEqual({
       mode: "serve-stale-and-refresh",
@@ -68,12 +97,13 @@ describe("getEventernoteCacheDisposition", () => {
           parserVersion: 2,
           activities: [{ eventernoteEventId: 1, title: "test", eventDate: "2026-01-01", venue: null, matchedBandSlugs: ["ppp"], sourceUrl: "https://example.com" }],
           errorMessage: null,
-          lastFetchedAt: new Date("2026-04-20T10:00:00.000Z"),
+          lastFetchedAt: new Date("2026-04-18T10:00:00.000Z"),
           expiresAt: null,
           refreshingStartedAt: null,
           remoteEventCount: 100,
         },
         null,
+        now,
       ),
     ).toEqual({
       mode: "serve-cached",
@@ -98,6 +128,7 @@ describe("getEventernoteCacheDisposition", () => {
           remoteEventCount: 100,
         },
         100,
+        now,
       ),
     ).toEqual({
       mode: "serve-cached",
@@ -122,6 +153,7 @@ describe("getEventernoteCacheDisposition", () => {
           remoteEventCount: null,
         },
         100,
+        now,
       ),
     ).toEqual({
       mode: "serve-stale-and-refresh",
@@ -146,6 +178,7 @@ describe("getEventernoteCacheDisposition", () => {
           remoteEventCount: null,
         },
         100,
+        now,
       ),
     ).toEqual({
       mode: "warm-and-refresh",
