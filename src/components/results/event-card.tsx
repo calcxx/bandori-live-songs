@@ -4,7 +4,7 @@ import Link from "next/link";
 import { getBandSupportColor, getBandTextColor } from "@/lib/constants/bands";
 import type { CopyDefinition } from "@/lib/i18n";
 import { buildLiveSetlistHref } from "@/lib/live-setlist/url";
-import { formatSongTitleForDisplay } from "@/lib/music/title-utils";
+import { formatSongTitleForDisplay, normalizeQuotesForDisplay } from "@/lib/music/title-utils";
 import type {
   MatchedEventEntry,
   MatchedEventSetlistEntry,
@@ -126,7 +126,7 @@ export function EventCard({
                   mouseEvent.stopPropagation();
                 }}
               >
-                {event.title}
+                {normalizeQuotesForDisplay(event.title)}
               </Link>
             ) : (
               <a
@@ -138,7 +138,7 @@ export function EventCard({
                   mouseEvent.stopPropagation();
                 }}
               >
-                {event.title}
+                {normalizeQuotesForDisplay(event.title)}
               </a>
             )}
             <span

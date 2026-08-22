@@ -70,7 +70,7 @@ const cursorParameter = {
 export const publicApiOpenApiDocument = {
   openapi: "3.1.0",
   info: {
-    title: "bandori.live Open API",
+    title: "BanG Dream! Events to Songs Open API",
     version: "1.0.0",
     description:
       "Read-only public data for BanG Dream! bands, songs, events, and setlists. The service is provided as-is without an availability SLA.",

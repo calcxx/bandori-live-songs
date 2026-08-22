@@ -22,13 +22,31 @@ export type LiveSetlistBand = {
   name: string;
 };
 
+export type RecentLiveSetlist = LiveSetlistCandidate & {
+  performingBands: LiveSetlistBand[];
+};
+
+export type LiveSetlistSeriesEvent = LiveSetlistCandidate & {
+  label: string;
+};
+
+export type LiveSetlistSeries = {
+  title: string;
+  events: LiveSetlistSeriesEvent[];
+};
+
 export type LiveSetlist = LiveSetlistCandidate & {
   performingBands: LiveSetlistBand[];
   entries: LiveSetlistEntry[];
+  series?: LiveSetlistSeries | null;
 };
 
 export type LiveSetlistCandidatesResponse = {
   candidates: LiveSetlistCandidate[];
+};
+
+export type RecentLiveSetlistsResponse = {
+  events: RecentLiveSetlist[];
 };
 
 export type LiveSetlistResponse = {

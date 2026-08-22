@@ -1,7 +1,11 @@
 "use client";
 
 import { useMemo, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from "react";
-import { getBandSupportColor } from "@/lib/constants/bands";
+import {
+  BAND_SEEDS,
+  DEFAULT_VISIBLE_BAND_SLUGS,
+  getBandSupportColor,
+} from "@/lib/constants/bands";
 import type { EventVisibilityRules } from "@/lib/events/event-visibility";
 import {
   aggregateUserSongStats,
@@ -124,6 +128,51 @@ export function useResultsState({
     [bandSummaries, stats.totalSummary.totalCount],
   );
 
+  const bandEventShareSegments = useMemo(() => {
+    const bands = BAND_SEEDS.filter(
+      (band): band is (typeof BAND_SEEDS)[number] & { supportColor: string } =>
+        band.groupType === "band" &&
+        band.supportColor !== null &&
+        (!hideVirtualBands || DEFAULT_VISIBLE_BAND_SLUGS.has(band.slug)),
+    );
+    const knownBandSlugs = new Set(bands.map((band) => band.slug));
+    const eventCountsByBand = new Map<string, number>();
+
+    for (const event of stats.matchedEvents) {
+      for (const slug of new Set(event.matchedBandSlugs)) {
+        if (!knownBandSlugs.has(slug)) {
+          continue;
+        }
+
+        eventCountsByBand.set(slug, (eventCountsByBand.get(slug) ?? 0) + 1);
+      }
+    }
+
+    const totalBandAppearances = [...eventCountsByBand.values()].reduce(
+      (total, count) => total + count,
+      0,
+    );
+
+    if (totalBandAppearances === 0) {
+      return [];
+    }
+
+    return bands.flatMap((band) => {
+      const count = eventCountsByBand.get(band.slug) ?? 0;
+      if (count === 0) {
+        return [];
+      }
+
+      return [{
+        slug: band.slug,
+        label: band.nameJa,
+        count,
+        width: (count / totalBandAppearances) * 100,
+        supportColor: band.supportColor,
+      }];
+    });
+  }, [hideVirtualBands, stats.matchedEvents]);
+
   async function loadBandSongEvents(slug: string, songIds: number[]) {
     if (loadedBands[slug] || loadingBands[slug] || songIds.length === 0) {
       return;
@@ -231,6 +280,7 @@ export function useResultsState({
     attendedEventIds,
     bandSummaryColumns,
     totalProgressSegments,
+    bandEventShareSegments,
     toggleBandSongs,
     toggleSongEvents,
     handleSongPointerEnter,

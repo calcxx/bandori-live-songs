@@ -4,12 +4,14 @@ import {
   ArrowDownIcon,
   ArrowUpDownIcon,
   ArrowUpIcon,
+  SearchIcon,
   XIcon,
 } from "lucide-react";
 import Link from "next/link";
 import {
   type KeyboardEvent,
   type MouseEvent,
+  useDeferredValue,
   useEffect,
   useMemo,
   useState,
@@ -26,7 +28,8 @@ import {
 } from "@/lib/constants/bands";
 import { getCopy, type Locale } from "@/lib/i18n";
 import { buildLiveSetlistHref } from "@/lib/live-setlist/url";
-import { formatSongTitleForDisplay } from "@/lib/music/title-utils";
+import { matchesSongTitleSearch } from "@/lib/music/song-search";
+import { formatSongTitleForDisplay, normalizeQuotesForDisplay } from "@/lib/music/title-utils";
 import type { SongEventReference } from "@/lib/stats/aggregate";
 import type {
   SongPerformanceStat,
@@ -38,21 +41,41 @@ const allBandsValue = "all";
 type SortColumn = "performanceCount" | "firstReleaseDate";
 type SortDirection = "asc" | "desc";
 
+function compareNullableDates(
+  left: string | null,
+  right: string | null,
+) {
+  if (left === right) return 0;
+  if (left === null) return 1;
+  if (right === null) return -1;
+  return left.localeCompare(right);
+}
+
+function compareText(left: string, right: string) {
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
+}
+
 export function SongsStatsPageClient({
   locale,
   stats,
   eventCounts,
   initialBandSlug,
+  initialSearchQuery,
+  releasedThroughDate,
   isAdminAuthenticated,
 }: {
   locale: Locale;
   stats: SongPerformanceStat[];
   eventCounts: SongStatsEventCounts;
   initialBandSlug: string;
+  initialSearchQuery: string;
+  releasedThroughDate: string;
   isAdminAuthenticated: boolean;
 }) {
   const [activeLocale, setActiveLocale] = useState(locale);
   const [activeBandSlug, setActiveBandSlug] = useState(initialBandSlug);
+  const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
   const [activeSongId, setActiveSongId] = useState<number | null>(null);
   const [sortColumn, setSortColumn] =
     useState<SortColumn>("performanceCount");
@@ -68,8 +91,16 @@ export function SongsStatsPageClient({
     Record<number, boolean>
   >({});
   const copy = getCopy(activeLocale);
+  const deferredSearchQuery = useDeferredValue(searchQuery.trim());
   const availableBandSlugs = useMemo(
-    () => new Set(stats.map((song) => song.bandSlug)),
+    () =>
+      new Set(
+        stats.flatMap((song) =>
+          song.category === "original" && song.bandSlug
+            ? [song.bandSlug]
+            : [],
+        ),
+      ),
     [stats],
   );
   const bandOptions = useMemo(
@@ -82,16 +113,42 @@ export function SongsStatsPageClient({
     [availableBandSlugs],
   );
   const visibleStats = useMemo(() => {
-    const filteredStats =
+    const bandFilteredStats =
       activeBandSlug === allBandsValue
         ? stats
-        : stats.filter((song) => song.bandSlug === activeBandSlug);
+        : stats.filter(
+            (song) =>
+              song.category === "original" &&
+              song.bandSlug === activeBandSlug,
+          );
+    const filteredStats = deferredSearchQuery
+      ? bandFilteredStats.filter((song) =>
+          matchesSongTitleSearch(song.title, deferredSearchQuery),
+        )
+      : bandFilteredStats.filter(
+          (song) =>
+            song.category === "original" &&
+            song.firstReleaseDate !== null &&
+            song.firstReleaseDate <= releasedThroughDate,
+        );
 
     return [...filteredStats].sort((left, right) => {
+      if (
+        sortColumn === "firstReleaseDate" &&
+        (left.firstReleaseDate === null ||
+          right.firstReleaseDate === null)
+      ) {
+        if (left.firstReleaseDate === right.firstReleaseDate) return 0;
+        return left.firstReleaseDate === null ? 1 : -1;
+      }
+
       const valueDelta =
         sortColumn === "performanceCount"
           ? left.performanceCount - right.performanceCount
-          : left.firstReleaseDate.localeCompare(right.firstReleaseDate);
+          : compareNullableDates(
+              left.firstReleaseDate,
+              right.firstReleaseDate,
+            );
 
       if (valueDelta !== 0) {
         return sortDirection === "asc" ? valueDelta : -valueDelta;
@@ -99,13 +156,23 @@ export function SongsStatsPageClient({
 
       if (sortColumn === "performanceCount") {
         const releaseDateDelta =
-          left.firstReleaseDate.localeCompare(right.firstReleaseDate);
+          compareNullableDates(
+            left.firstReleaseDate,
+            right.firstReleaseDate,
+          );
         if (releaseDateDelta !== 0) return releaseDateDelta;
       }
 
-      return left.title.localeCompare(right.title);
+      return compareText(left.title, right.title);
     });
-  }, [activeBandSlug, sortColumn, sortDirection, stats]);
+  }, [
+    activeBandSlug,
+    deferredSearchQuery,
+    releasedThroughDate,
+    sortColumn,
+    sortDirection,
+    stats,
+  ]);
   const recordedEventCount =
     activeBandSlug === allBandsValue
       ? eventCounts.all
@@ -115,14 +182,34 @@ export function SongsStatsPageClient({
     document.title = `${copy.songStatsTitle} | ${copy.navTitleDesktop}`;
   }, [copy.navTitleDesktop, copy.songStatsTitle]);
 
+  function updateUrl(slug: string, query: string) {
+    const params = new URLSearchParams();
+    if (slug !== allBandsValue) {
+      params.set("band", slug);
+    }
+    if (query.trim()) {
+      params.set("q", query.trim());
+    }
+    const search = params.toString();
+    window.history.replaceState(
+      null,
+      "",
+      search ? `/songs?${search}` : "/songs",
+    );
+  }
+
   function selectBand(slug: string) {
     setActiveBandSlug(slug);
+    setSearchQuery("");
     setActiveSongId(null);
-    const href =
-      slug === allBandsValue
-        ? "/songs"
-        : `/songs?band=${encodeURIComponent(slug)}`;
-    window.history.replaceState(null, "", href);
+    updateUrl(slug, "");
+  }
+
+  function updateSearchQuery(query: string) {
+    setSearchQuery(query);
+    setActiveBandSlug(allBandsValue);
+    setActiveSongId(null);
+    updateUrl(allBandsValue, query);
   }
 
   function toggleSort(column: SortColumn) {
@@ -303,15 +390,54 @@ export function SongsStatsPageClient({
           })}
         </section>
 
+        <div className="relative mt-5">
+          <label htmlFor="song-search" className="sr-only">
+            {copy.songStatsSearchInputLabel}
+          </label>
+          <SearchIcon
+            className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-soft"
+            aria-hidden="true"
+          />
+          <input
+            id="song-search"
+            type="search"
+            value={searchQuery}
+            onChange={(event) => updateSearchQuery(event.target.value)}
+            autoComplete="off"
+            placeholder={copy.songStatsSearchPlaceholder}
+            className="min-h-12 w-full rounded-[1.15rem] border border-border-soft bg-panel px-11 pr-12 text-base outline-none placeholder:text-ink-soft focus:border-accent focus:ring-2 focus:ring-accent/20 [&::-webkit-search-cancel-button]:appearance-none"
+          />
+          {searchQuery.length > 0 ? (
+            <button
+              type="button"
+              aria-label={copy.songStatsSearchClearAria}
+              onClick={() => updateSearchQuery("")}
+              className="absolute right-2.5 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-ink-soft transition hover:bg-panel-strong hover:text-foreground"
+            >
+              <XIcon className="h-4 w-4" aria-hidden="true" />
+            </button>
+          ) : null}
+        </div>
+
         <p
           className="mt-4 flex items-baseline gap-2 text-sm text-ink-soft"
           aria-live="polite"
         >
-          <span>{copy.songStatsRecordedEventsLabel}</span>
+          <span>
+            {deferredSearchQuery
+              ? copy.songStatsSearchResultsLabel
+              : copy.songStatsRecordedEventsLabel}
+          </span>
           <strong className="font-medium tabular-nums text-foreground">
-            {recordedEventCount}
+            {deferredSearchQuery
+              ? visibleStats.length
+              : recordedEventCount}
           </strong>
-          <span>{copy.songStatsRecordedEventsUnit}</span>
+          <span>
+            {deferredSearchQuery
+              ? copy.songStatsSearchResultsUnit
+              : copy.songStatsRecordedEventsUnit}
+          </span>
         </p>
 
         <section className="mt-3 rounded-[1.15rem] border border-border-soft bg-panel">
@@ -367,9 +493,21 @@ export function SongsStatsPageClient({
               </tr>
             </thead>
             <tbody className="divide-y divide-border-soft">
+              {visibleStats.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={3}
+                    className="px-4 py-10 text-center text-sm text-ink-soft sm:px-5"
+                  >
+                    {copy.songStatsSearchEmpty}
+                  </td>
+                </tr>
+              ) : null}
               {visibleStats.map((song) => {
                 const textColor =
-                  getBandTextColor(song.bandSlug) ?? "var(--foreground)";
+                  (song.bandSlug
+                    ? getBandTextColor(song.bandSlug)
+                    : null) ?? "var(--foreground)";
                 const isActive = activeSongId === song.id;
                 const relatedEvents =
                   songEventsBySongId[song.id] ?? [];
@@ -413,11 +551,16 @@ export function SongsStatsPageClient({
                       >
                         {formatSongTitleForDisplay(song.title)}
                       </span>
+                      {song.category === "cover" ? (
+                        <span className="ml-2 inline-flex rounded-full border border-border-soft px-1.5 py-0.5 align-middle text-[0.65rem] font-normal leading-none text-ink-soft">
+                          {copy.coverSongBadge}
+                        </span>
+                      ) : null}
                       {isActive ? (
                         <div
                           id={`song-events-${song.id}`}
                           data-song-events-popover
-                          className="absolute left-0 top-full z-20 mt-2 w-[calc(100vw-2rem)] max-w-[30rem] rounded-[1rem] border border-border-soft bg-panel px-3 py-3 text-left font-normal text-foreground shadow-lg"
+                          className="absolute left-0 top-full z-20 mt-2 w-[calc(100vw-2rem)] max-w-[calc(64rem-2rem)] rounded-[1rem] border border-border-soft bg-panel px-3 py-3 text-left font-normal text-foreground shadow-lg sm:w-[calc(100vw-4rem)] sm:max-w-[calc(64rem-4rem)]"
                         >
                           <button
                             type="button"
@@ -432,12 +575,16 @@ export function SongsStatsPageClient({
                           </button>
                           {relatedEvents.length > 0 ? (
                             <>
-                              <p className="text-xs text-ink-soft">
-                                {copy.releaseDateLabel(
-                                  song.firstReleaseDate,
-                                )}
-                              </p>
-                              <p className="mt-1.5 text-xs text-ink-soft">
+                              {song.firstReleaseDate ? (
+                                <p className="text-xs text-ink-soft">
+                                  {copy.releaseDateLabel(
+                                    song.firstReleaseDate,
+                                  )}
+                                </p>
+                              ) : null}
+                              <p
+                                className={`${song.firstReleaseDate ? "mt-1.5" : ""} text-xs text-ink-soft`}
+                              >
                                 {copy.relatedEventsLabel(
                                   relatedEvents.length,
                                 )}
@@ -457,7 +604,9 @@ export function SongsStatsPageClient({
                                     <span className="mx-1.5 text-ink-soft">
                                       ·
                                     </span>
-                                    <span>{event.title}</span>
+                                    <span>
+                                      {normalizeQuotesForDisplay(event.title)}
+                                    </span>
                                   </Link>
                                 ))}
                               </div>
@@ -478,7 +627,7 @@ export function SongsStatsPageClient({
                       {song.performanceCount}
                     </td>
                     <td className="whitespace-nowrap px-4 py-2.5 text-right text-ink-soft sm:px-5">
-                      {song.firstReleaseDate}
+                      {song.firstReleaseDate ?? "—"}
                     </td>
                   </tr>
                 );

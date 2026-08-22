@@ -1,4 +1,5 @@
 import { pathToFileURL } from "node:url";
+import { loadEnvConfig } from "@next/env";
 import { eq } from "drizzle-orm";
 import { getLocalDiscographyCatalog } from "../src/lib/bandori/discography-catalog";
 import { PROJECT_COMMON_SLUG } from "../src/lib/constants/bands";
@@ -6,6 +7,8 @@ import { connectDatabase } from "../src/lib/db/core";
 import { songs } from "../src/lib/db/schema";
 import { compareSongsByReleaseDate } from "../src/lib/music/sort";
 import { refreshSongLiveState } from "../src/lib/stats/refresh-song-live-state";
+
+loadEnvConfig(process.cwd());
 
 function chunk<T>(items: T[], size: number) {
   const chunks: T[][] = [];

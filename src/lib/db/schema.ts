@@ -28,6 +28,10 @@ export const bands = pgTable("bands", {
   displayOrder: integer("display_order").notNull(),
   groupType: bandGroupTypeEnum("group_type").notNull(),
   eventernoteActorId: integer("eventernote_actor_id"),
+  searchAliases: text("search_aliases")
+    .array()
+    .default(sql`'{}'::text[]`)
+    .notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

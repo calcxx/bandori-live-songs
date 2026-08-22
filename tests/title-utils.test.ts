@@ -3,8 +3,13 @@ import {
   canonicalizeSongTitle,
   formatSongTitleForDisplay,
   isExcludedTrackTitle,
+  normalizeQuotesForDisplay,
   normalizeSongTitle,
 } from "@/lib/music/title-utils";
+import {
+  chooseEarliestMusicBrainzRecording,
+  musicBrainzCorrectionKey,
+} from "@/lib/musicbrainz/release-date-corrections";
 
 describe("title-utils", () => {
   it("removes track numbers and version suffixes", () => {
@@ -46,6 +51,9 @@ describe("title-utils", () => {
     expect(normalizeSongTitle("  CiRCLE   THANKS MUSiC♪ ")).toBe("circle thanks music♪");
     expect(normalizeSongTitle("Choir ‘S’ Choir")).toBe("choir 's' choir");
     expect(normalizeSongTitle('"Say cheese!!!!!"')).toBe(normalizeSongTitle("“Say cheese!!!!!”"));
+    expect(normalizeSongTitle("ゆら・ゆらRing‐Dong‐Dance")).toBe(
+      normalizeSongTitle("ゆら・ゆらRing-Dong-Dance"),
+    );
     expect(normalizeSongTitle("天下卜ーイツA to Z☆")).toBe(normalizeSongTitle("天下トーイツ A to Z☆"));
   });
 
@@ -55,6 +63,15 @@ describe("title-utils", () => {
     );
   });
 
+  it("normalizes curly quotes to half-width while preserving corner brackets", () => {
+    expect(
+      normalizeQuotesForDisplay("Poppin’Party New Year LIVE 「Happy BanG Year!!」"),
+    ).toBe("Poppin'Party New Year LIVE 「Happy BanG Year!!」");
+    expect(normalizeQuotesForDisplay("EXPOSE ‘Burn out!!!’")).toBe("EXPOSE 'Burn out!!!'");
+    expect(normalizeQuotesForDisplay("“UNIONS” Road")).toBe("\"UNIONS\" Road");
+    expect(normalizeQuotesForDisplay("Let’s Go!! ~Let's Go!!~")).toBe("Let's Go!! ~Let's Go!!~");
+  });
+
   it("filters out instrumental and drama tracks", () => {
     expect(isExcludedTrackTitle("3.どきどきデエト -instrumental-")).toBe(true);
     expect(isExcludedTrackTitle("4. ドラマパート")).toBe(true);
@@ -62,5 +79,22 @@ describe("title-utils", () => {
     expect(isExcludedTrackTitle("「もういちど ルミナス」MV")).toBe(true);
     expect(isExcludedTrackTitle("2nd LIVE「そのままを抱きしめて」アフタートーク")).toBe(true);
     expect(isExcludedTrackTitle("2. Game Changer")).toBe(false);
+  });
+});
+
+describe("MusicBrainz release-date corrections", () => {
+  it("uses a normalized correction key for quote variants", () => {
+    expect(musicBrainzCorrectionKey("raise-a-suilen", "EXPOSE 'Burn out!!!'"))
+      .toBe(musicBrainzCorrectionKey("raise-a-suilen", "EXPOSE ‘Burn out!!!’"));
+  });
+
+  it("selects the earliest matching non-video recording", () => {
+    expect(
+      chooseEarliestMusicBrainzRecording("EXPOSE ‘Burn out!!!’", [
+        { title: "EXPOSE ‘Burn out!!!’", video: true, "first-release-date": "2019-02-20", score: 100 },
+        { title: "EXPOSE ‘Burn out!!!’", video: false, "first-release-date": "2020-08-19", score: 100 },
+        { title: "EXPOSE ‘Burn out!!!’", video: false, "first-release-date": "2019-02-20", score: 100 },
+      ]),
+    ).toEqual({ firstReleaseDate: "2019-02-20", mbTitle: "EXPOSE ‘Burn out!!!’" });
   });
 });

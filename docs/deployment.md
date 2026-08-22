@@ -27,6 +27,7 @@ DIRECT_URL=postgres://...
 SETLIST_IMPORT_KEY=<随机长字符串>
 CRON_SECRET=<随机长字符串>
 DEMO_USER_ID=
+NEXT_PUBLIC_SITE_URL=https://your-domain.example
 ```
 
 - `DATABASE_URL`：应用运行时连接，推荐使用连接池。
@@ -35,6 +36,7 @@ DEMO_USER_ID=
 - `CRON_SECRET`：调用 `/api/cron/event-ranking` 与 `/api/cron/songs-sync` 时需在
   `Authorization: Bearer <secret>` 中携带。
 - `DEMO_USER_ID`：可选；设置后首页展示该用户的示例数据，未设置时仅显示搜索框。
+- `NEXT_PUBLIC_SITE_URL`：站点公开地址，用于生成 `sitemap.xml` 与 `robots.txt`；本地可使用 `http://localhost:3000`。
 
 ## 3. 初始化数据库
 

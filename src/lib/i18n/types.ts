@@ -28,6 +28,9 @@ export type CopyDefinition = {
   liveSearchEmpty: string;
   liveSearchError: string;
   liveSetlistLoading: string;
+  onThisDaySetlistsTitle: string;
+  recentSetlistsTitle: string;
+  liveSeriesAria: string;
   coverSongBadge: string;
   resultSectionLabel: string;
   warmingTitle: string;
@@ -49,8 +52,8 @@ export type CopyDefinition = {
   hideSonglessActivities: string;
   catalogSummaryNote: string;
   matchedEventsLabel: string;
-  collectedSetlists: string;
-  missingSetlists: string;
+  bandEventShareLabel: string;
+  bandEventShareTooltip: (bandName: string, eventCount: number, percentage: string) => string;
   bandProgressTitle: string;
   bandProgressHintMobile: string;
   bandProgressHintDesktop: string;
@@ -83,6 +86,12 @@ export type CopyDefinition = {
   songStatsTitle: string;
   songStatsDescription: string;
   songStatsAllBands: string;
+  songStatsSearchInputLabel: string;
+  songStatsSearchPlaceholder: string;
+  songStatsSearchClearAria: string;
+  songStatsSearchResultsLabel: string;
+  songStatsSearchResultsUnit: string;
+  songStatsSearchEmpty: string;
   songStatsRecordedEventsLabel: string;
   songStatsRecordedEventsUnit: string;
   songStatsSongColumn: string;

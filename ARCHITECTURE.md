@@ -9,7 +9,8 @@
 - 输入 Eventernote 用户 ID，抓取该用户参加过的所有活动
 - 匹配活动与 BanG Dream! 乐队，关联官方曲目库
 - 统计每支乐队的歌曲听取覆盖率，展示已收录/缺失的 Setlist
-- 按活动 ID 或标题模糊检索 Setlist，并提供可分享的活动链接
+- 按活动 ID、标题、日期及出演乐队混合检索 Setlist，并提供可分享的活动链接
+- 通过独立用户/活动路径浏览最近活动、“历史上的今天”和自动识别的活动系列
 - 展示独立的歌曲演出统计页与版本化开放 API
 - 区分原创曲、翻唱曲和企划共通歌曲，Setlist 条目绑定歌曲 ID
 - 支持简体中文、繁体中文和日语
@@ -136,7 +137,11 @@ sequenceDiagram
 ```
 app/
 ├── page.tsx                          # 首页 (RSC) — 查询入口 + 数据预取
+├── users/[userId]/page.tsx           # 可分享的用户统计路径
+├── events/page.tsx                   # 活动搜索与最近活动
+├── events/[eventId]/page.tsx         # 可分享的活动 Setlist 路径
 ├── songs/page.tsx                    # 歌曲演出统计
+├── sitemap.ts / robots.ts            # 公开站点的爬虫元数据
 ├── api/page.tsx                      # 开放 API 说明页
 ├── layout.tsx                        # 根布局 — 字体、主题
 ├── globals.css                       # Tailwind 全局样式
@@ -150,10 +155,11 @@ app/
 │       ├── event-ranking/route.ts    # 刷新 bandori_event_index
 │       └── songs-sync/route.ts       # 同步 MusicBrainz 最近歌曲
 └── admin/
+    ├── band-search-aliases/           # 乐队检索等效关键词管理
     ├── list/                         # 管理后台 — 活动列表（查 index，年份/乐队复选）
     ├── recent/                       # 管理后台 — 近期活动（查 index）
     ├── rules/                        # 管理后台 — 活动可见性规则
-    ├── songs-import/                 # 管理后台 — 歌曲导入
+    ├── songs-import/                 # 管理后台 — 歌曲导入、编辑与删除
     ├── setlist-import/               # 管理后台 — Setlist 导入/编辑
     └── user-cache/                   # 管理后台 — 用户缓存只读浏览
 ```
@@ -172,9 +178,10 @@ components/
 │   ├── event-card.tsx                # 活动卡片
 │   └── utils.ts                      # 共享工具函数
 ├── search-form.tsx                   # 搜索表单
-├── live-setlist-search.tsx           # 活动搜索表单与候选项
-├── live-setlist-result.tsx           # Setlist 及首次演唱标记
-├── songs-stats-page-client.tsx       # 歌曲演出统计交互
+├── live-setlist-search.tsx           # 标题、日期及出演乐队混合搜索
+├── live-setlist-result.tsx           # Setlist、首次演唱标记及系列切换
+├── recent-live-setlists.tsx          # 最近活动与“历史上的今天”列表
+├── songs-stats-page-client.tsx       # 歌曲演出统计及完整曲库搜索
 ├── public-footer.tsx                 # API 与 GitHub 链接
 ├── locale-toggle.tsx                 # 语言切换
 ├── theme-toggle.tsx                  # 主题切换
@@ -200,7 +207,7 @@ stats/
 ├── aggregate.ts                 # 前端聚合逻辑 (纯函数)
 ├── eventernote-cache-policy.ts  # 缓存策略：活动数比对 / 日龄静默刷新 / 租约
 ├── song-events-cache.ts         # 歌曲关联活动缓存
-├── song-performance-stats.ts    # 歌曲演出次数统计
+├── song-performance-stats.ts    # 完整曲库演出次数统计与搜索数据
 └── refresh-song-live-state.ts   # 刷新歌曲现场演出状态
 ```
 
@@ -324,6 +331,7 @@ erDiagram
         int display_order
         enum group_type
         int eventernote_actor_id
+        text[] search_aliases
     }
     songs {
         int id PK
@@ -383,20 +391,22 @@ data/
 ```
 
 开源仓库不附带生产歌曲、活动、Setlist 或按活动 ID 定制的屏蔽数据。乐队 slug、显示名称、
-颜色与公开外部服务标识属于应用运行所需的领域配置。
+颜色、公开外部服务标识及通用乐队搜索别名属于应用运行所需的领域配置。活动系列识别使用
+通用标题前缀和年份规则，不包含针对具体活动 ID 或巡演名称的特殊分支。
 
 ### 6.5 `scripts/` — 离线数据管理
 
 ```
 scripts/
-├── seed-bands.ts                          # 初始化乐队数据
+├── seed-bands.ts                          # 初始化乐队数据和通用搜索别名
 ├── seed-all.ts                            # 全量数据初始化
 ├── import-discography.ts                  # 从内置 JSON 导入曲目
 ├── refresh-event-ranking.ts               # 刷新 bandori_event_index（演员页全量）
 ├── refresh-event-recent.ts                # 同上入口（兼容旧脚本名）
 ├── backfill-event-meta.ts                 # 回填活动元数据
 ├── backfill-eventernote-user-profiles.ts  # 回填用户档案
-└── cleanup-event-title-tags.ts            # 清理活动标题标签
+├── cleanup-event-title-tags.ts            # 清理活动标题标签
+└── cleanup-song-references.ts             # 校正歌曲引用并清理未引用翻唱（默认 dry-run）
 ```
 
 ## 7. 测试结构

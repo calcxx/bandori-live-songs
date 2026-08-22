@@ -9,6 +9,7 @@ import { isSongCategory } from "@/lib/music/song-category";
 import { SongsImportForm } from "./songs-import-form";
 import type {
   EditableSong,
+  SongDeleteActionState,
   SongEditActionState,
   SongsImportActionState,
 } from "./types";
@@ -255,6 +256,50 @@ async function submitSongEdit(
   };
 }
 
+async function submitSongDelete(
+  _: SongDeleteActionState,
+  formData: FormData,
+): Promise<SongDeleteActionState> {
+  "use server";
+
+  const authStatus = await getAdminAuthStatus();
+  if (!authStatus.authenticated) {
+    return {
+      status: "error",
+      message: authStatus.message,
+    };
+  }
+
+  const songId = Number(formData.get("songId"));
+  if (!Number.isSafeInteger(songId) || songId <= 0) {
+    return {
+      status: "error",
+      message: "请选择要删除的歌曲。",
+    };
+  }
+
+  const deletedSongs = await getDb()
+    .delete(songs)
+    .where(eq(songs.id, songId))
+    .returning({ title: songs.title });
+  const deletedSong = deletedSongs[0];
+  if (!deletedSong) {
+    return {
+      status: "error",
+      message: "歌曲不存在，可能已被其他管理员删除。",
+    };
+  }
+
+  refreshSongCaches({ includeSongEvents: true });
+  revalidatePath("/admin/songs-import");
+  revalidatePath("/songs");
+
+  return {
+    status: "success",
+    message: `已删除歌曲「${deletedSong.title}」。歌单中的原始曲名仍然保留。`,
+  };
+}
+
 export default async function SongsImportPage() {
   const bandOptions = BAND_SEEDS.filter((band) => band.groupType === "band").map(
     (band) => ({
@@ -278,6 +323,7 @@ export default async function SongsImportPage() {
       <SongsImportForm
         action={submitSongsImport}
         editAction={submitSongEdit}
+        deleteAction={submitSongDelete}
         bandOptions={bandOptions}
         existingSongs={existingSongs}
       />

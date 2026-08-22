@@ -1,5 +1,5 @@
 import { asc, eq } from "drizzle-orm";
-import { updateTag } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { getAdminAuthStatus } from "@/lib/admin/server-auth";
 import { BAND_SEEDS } from "@/lib/constants/bands";
 import { getDb } from "@/lib/db/core";
@@ -167,9 +167,6 @@ async function resolveSetlistLines(
     .from(songs)
     .leftJoin(bands, eq(songs.bandSlug, bands.slug));
   const resolveSong = createSongResolver(songRows);
-  const titleBySongId = new Map(
-    songRows.map((song) => [song.id, song.title]),
-  );
 
   const resolved: Array<ParsedSetlistLine & { songId: number }> = [];
   const resolutionLines: NonNullable<
@@ -190,8 +187,7 @@ async function resolveSetlistLines(
     if (resolution.status === "resolved") {
       resolved.push({
         ...line,
-        rawTitle:
-          titleBySongId.get(resolution.songId) ?? line.rawTitle,
+        rawTitle: resolution.title,
         songId: resolution.songId,
       });
       continue;
@@ -389,6 +385,8 @@ async function submitSetlistImport(
   updateTag("song-catalog");
   updateTag("open-api-v1");
   updateTag("song-events");
+  updateTag("sitemap-events");
+  revalidatePath("/sitemap.xml");
 
   return {
     status: "success",

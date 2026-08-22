@@ -2,10 +2,11 @@
 
 import { XIcon } from "lucide-react";
 import { useRef, useState, type FormEvent } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { isValidEventernoteUserId, normalizeEventernoteUserId } from "@/lib/eventernote/user-id";
 import type { CopyDefinition } from "@/lib/i18n";
 import { buildAwaitFreshAfterCookie } from "@/lib/manual-refresh-navigation";
+import { buildUserHref } from "@/lib/public-url";
 
 type SearchFormProps = {
   defaultUserId?: string;
@@ -13,7 +14,6 @@ type SearchFormProps = {
 };
 
 export function SearchForm({ defaultUserId = "", copy: localeCopy }: SearchFormProps) {
-  const pathname = usePathname();
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [userIdValue, setUserIdValue] = useState(defaultUserId);
@@ -24,8 +24,8 @@ export function SearchForm({ defaultUserId = "", copy: localeCopy }: SearchFormP
   const isEmptyInput = normalizedUserId.length === 0;
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
     if (invalidUserId || isEmptyInput) {
-      event.preventDefault();
       return;
     }
 
@@ -34,17 +34,18 @@ export function SearchForm({ defaultUserId = "", copy: localeCopy }: SearchFormP
       normalizeEventernoteUserId(defaultUserId).toLowerCase() === normalizedUserId.toLowerCase();
 
     if (isSameUser) {
-      event.preventDefault();
       document.cookie = buildAwaitFreshAfterCookie(normalizedUserId, Date.now());
-      const params = new URLSearchParams();
-      params.set("userId", normalizedUserId);
-      params.set("refresh", "1");
-      router.push(`${pathname}?${params.toString()}`, { scroll: false });
+      router.push(`${buildUserHref(normalizedUserId)}?refresh=1`, {
+        scroll: false,
+      });
+      return;
     }
+
+    router.push(buildUserHref(normalizedUserId), { scroll: false });
   }
 
   return (
-    <form action="/" method="get" onSubmit={handleSubmit} className="flex w-full flex-col gap-2 sm:gap-3">
+    <form onSubmit={handleSubmit} className="flex w-full flex-col gap-2 sm:gap-3">
       <label className="sr-only" htmlFor="userId">
         {localeCopy.searchInputLabel}
       </label>
@@ -53,7 +54,6 @@ export function SearchForm({ defaultUserId = "", copy: localeCopy }: SearchFormP
           <input
             ref={inputRef}
             id="userId"
-            name="userId"
             value={userIdValue}
             onChange={(event) => {
               setUserIdValue(event.target.value);

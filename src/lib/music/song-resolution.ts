@@ -18,7 +18,7 @@ export type SongResolutionCandidate = {
 };
 
 export type SongResolution =
-  | { status: "resolved"; songId: number }
+  | { status: "resolved"; songId: number; title: string }
   | { status: "selection-required"; candidates: SongResolutionCandidate[] };
 
 export function createSongResolver(songRows: ResolvableSong[]) {
@@ -35,13 +35,17 @@ export function createSongResolver(songRows: ResolvableSong[]) {
   return (rawTitle: string, selectedSongId?: number): SongResolution => {
     const exact = songByTitle.get(rawTitle);
     if (exact) {
-      return { status: "resolved", songId: exact.id };
+      return { status: "resolved", songId: exact.id, title: exact.title };
     }
 
     const normalizedMatches =
       songsByNormalizedTitle.get(normalizeSongTitle(rawTitle)) ?? [];
     if (normalizedMatches.length === 1) {
-      return { status: "resolved", songId: normalizedMatches[0].id };
+      return {
+        status: "resolved",
+        songId: normalizedMatches[0].id,
+        title: normalizedMatches[0].title,
+      };
     }
 
     const ranked =
@@ -70,7 +74,7 @@ export function createSongResolver(songRows: ResolvableSong[]) {
     );
 
     return selected
-      ? { status: "resolved", songId: selected.songId }
+      ? { status: "resolved", songId: selected.songId, title: selected.title }
       : { status: "selection-required", candidates };
   };
 }

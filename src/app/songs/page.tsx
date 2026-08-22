@@ -5,6 +5,7 @@ import {
   verifyAdminAuthToken,
 } from "@/lib/admin/auth";
 import { BAND_SEEDS } from "@/lib/constants/bands";
+import { getCurrentReleaseDate } from "@/lib/music/release-date";
 import { getRequestLocale } from "@/lib/request-locale";
 import {
   getSongPerformanceStats,
@@ -16,6 +17,7 @@ export const runtime = "nodejs";
 type SongsPageProps = {
   searchParams: Promise<{
     band?: string;
+    q?: string;
   }>;
 };
 
@@ -23,7 +25,7 @@ export default async function SongsPage({
   searchParams,
 }: SongsPageProps) {
   const [
-    { band = "" },
+    { band = "", q = "" },
     locale,
     stats,
     eventCounts,
@@ -43,7 +45,12 @@ export default async function SongsPage({
       (entry) => entry.slug,
     ),
   );
-  const initialBandSlug = validBandSlugs.has(band) ? band : "all";
+  const initialSearchQuery = q.slice(0, 100);
+  const initialBandSlug = initialSearchQuery.trim()
+    ? "all"
+    : validBandSlugs.has(band)
+      ? band
+      : "all";
 
   return (
     <SongsStatsPageClient
@@ -51,6 +58,8 @@ export default async function SongsPage({
       stats={stats}
       eventCounts={eventCounts}
       initialBandSlug={initialBandSlug}
+      initialSearchQuery={initialSearchQuery}
+      releasedThroughDate={getCurrentReleaseDate()}
       isAdminAuthenticated={isAdminAuthenticated}
     />
   );

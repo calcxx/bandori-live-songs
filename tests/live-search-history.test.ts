@@ -4,6 +4,7 @@ import {
   buildEmptyEventSearchHref,
   buildLiveSetlistHref,
 } from "@/lib/live-setlist/url";
+import { buildUserHref } from "@/lib/public-url";
 
 describe("live search history", () => {
   it("parses a completed live search", () => {
@@ -25,6 +26,7 @@ describe("live search history", () => {
       live: {
         ...record.live,
         performingBands: [],
+        series: null,
       },
       needsRefresh: true,
     });
@@ -42,6 +44,7 @@ describe("live search history", () => {
           { slug: "poppin-party", name: "Poppin'Party" },
           { slug: "roselia", name: "Roselia" },
         ],
+        series: null,
         entries: [],
       },
     };
@@ -62,10 +65,14 @@ describe("live search history", () => {
   });
 
   it("builds a shareable page URL from the Eventernote ID", () => {
-    expect(buildLiveSetlistHref(123)).toBe("/?eventId=123");
+    expect(buildLiveSetlistHref(123)).toBe("/events/123");
   });
 
   it("builds a persistent empty event-search URL", () => {
-    expect(buildEmptyEventSearchHref()).toBe("/?tab=event");
+    expect(buildEmptyEventSearchHref()).toBe("/events");
+  });
+
+  it("builds a user page URL", () => {
+    expect(buildUserHref(" sample_user ")).toBe("/users/sample_user");
   });
 });

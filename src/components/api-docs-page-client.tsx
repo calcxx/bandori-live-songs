@@ -29,7 +29,7 @@ export function ApiDocsPageClient({
   const copy = getApiDocsCopy(activeLocale);
 
   useEffect(() => {
-    document.title = `${copy.title} · bandori.live`;
+    document.title = `${copy.title} · BanG Dream! Events to Songs`;
   }, [copy.title]);
 
   return (

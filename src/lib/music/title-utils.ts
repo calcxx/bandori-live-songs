@@ -37,10 +37,14 @@ export function normalizeNFKC(raw: string) {
   return result;
 }
 
-export function formatSongTitleForDisplay(title: string) {
+export function normalizeQuotesForDisplay(title: string) {
   return title
     .replace(/[‘’＇]/g, "'")
-    .replace(/[“”„‟〝〞＂「」『』]/g, '"');
+    .replace(/[“”„‟〝〞＂]/g, '"');
+}
+
+export function formatSongTitleForDisplay(title: string) {
+  return normalizeQuotesForDisplay(title).replace(/[「」『』]/g, '"');
 }
 
 export function stripTrackIndex(rawTitle: string) {
@@ -78,6 +82,7 @@ export function normalizeSongTitle(rawTitle: string) {
   return normalizeNFKC(canonicalizeSongTitle(rawTitle))
     .toLowerCase()
     .replace(/[〜～]/g, "~")
+    .replace(/[‐‑‒–—−]/g, "-")
     .replace(/[‘’']/g, "'")
     .replace(/[“”„‟〝〞＂「」『』]/g, '"')
     .replace(/讚/g, "讃")

@@ -18,3 +18,5 @@ export type SongEditActionState = {
   status: "idle" | "error" | "success";
   message?: string;
 };
+
+export type SongDeleteActionState = SongEditActionState;

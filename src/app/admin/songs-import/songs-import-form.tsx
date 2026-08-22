@@ -4,6 +4,7 @@ import { useActionState, useEffect, useMemo, useState } from "react";
 import type { SongCategory } from "@/lib/music/song-category";
 import type {
   EditableSong,
+  SongDeleteActionState,
   SongEditActionState,
   SongsImportActionState,
 } from "./types";
@@ -17,6 +18,10 @@ type SongsImportFormProps = {
     state: SongEditActionState,
     formData: FormData,
   ) => Promise<SongEditActionState>;
+  deleteAction: (
+    state: SongDeleteActionState,
+    formData: FormData,
+  ) => Promise<SongDeleteActionState>;
   bandOptions: { slug: string; label: string }[];
   existingSongs: EditableSong[];
 };
@@ -25,6 +30,9 @@ const initialState: SongsImportActionState = {
   status: "idle",
 };
 const initialEditState: SongEditActionState = {
+  status: "idle",
+};
+const initialDeleteState: SongDeleteActionState = {
   status: "idle",
 };
 
@@ -40,6 +48,7 @@ function categoryLabel(category: SongCategory) {
 export function SongsImportForm({
   action,
   editAction,
+  deleteAction,
   bandOptions,
   existingSongs,
 }: SongsImportFormProps) {
@@ -61,9 +70,36 @@ export function SongsImportForm({
     bandOptions[0]?.slug ?? "",
   );
   const [editReleaseDate, setEditReleaseDate] = useState("");
+  const [showDeleteConfirmation, setShowDeleteConfirmation] =
+    useState(false);
+  const [deleteState, deleteFormAction, deletePending] = useActionState(
+    async (
+      previousState: SongDeleteActionState,
+      formData: FormData,
+    ) => {
+      const nextState = await deleteAction(previousState, formData);
+      if (nextState.status === "success") {
+        setSelectedSongId("");
+        setEditTitle("");
+        setEditCategory("original");
+        setEditBandSlug(bandOptions[0]?.slug ?? "");
+        setEditReleaseDate("");
+        setShowDeleteConfirmation(false);
+      }
+      return nextState;
+    },
+    initialDeleteState,
+  );
   const bandLabelBySlug = useMemo(
     () => new Map(bandOptions.map((band) => [band.slug, band.label])),
     [bandOptions],
+  );
+  const selectedSongTitle = useMemo(
+    () =>
+      existingSongs.find(
+        (song) => String(song.id) === selectedSongId,
+      )?.title ?? editTitle,
+    [editTitle, existingSongs, selectedSongId],
   );
   const filteredSongs = useMemo(() => {
     const normalizedFilter = songFilter.trim().toLocaleLowerCase();
@@ -107,6 +143,7 @@ export function SongsImportForm({
   }, [bandOptions]);
 
   function selectSong(songIdValue: string) {
+    setShowDeleteConfirmation(false);
     setSelectedSongId(songIdValue);
     const selectedSong = existingSongs.find(
       (song) => song.id === Number(songIdValue),
@@ -349,6 +386,53 @@ export function SongsImportForm({
           </button>
         </form>
 
+        <div className="mt-3">
+          {showDeleteConfirmation ? (
+            <div className="rounded-xl border border-red-500/40 bg-red-500/10 p-4">
+              <p className="text-sm font-medium text-foreground">
+                确认删除「{selectedSongTitle}」？
+              </p>
+              <p className="mt-1 text-sm leading-6 text-ink-soft">
+                删除后，歌单中的原始曲名仍会保留，但不再关联这首歌曲。此操作无法撤销。
+              </p>
+              <form
+                action={deleteFormAction}
+                className="mt-3 flex flex-wrap gap-2"
+              >
+                <input
+                  type="hidden"
+                  name="songId"
+                  value={selectedSongId}
+                />
+                <button
+                  type="submit"
+                  disabled={deletePending}
+                  className="inline-flex min-h-10 items-center justify-center rounded-xl bg-red-600 px-4 text-sm font-medium text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {deletePending ? "删除中..." : "确认删除"}
+                </button>
+                <button
+                  type="button"
+                  disabled={deletePending}
+                  onClick={() => setShowDeleteConfirmation(false)}
+                  className="inline-flex min-h-10 items-center justify-center rounded-xl border border-border-soft px-4 text-sm font-medium text-foreground transition hover:border-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  取消
+                </button>
+              </form>
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={!selectedSongId || editPending}
+              onClick={() => setShowDeleteConfirmation(true)}
+              className="inline-flex min-h-10 items-center justify-center rounded-xl border border-red-500/50 px-4 text-sm font-medium text-red-600 transition hover:border-red-600 hover:bg-red-500/10 dark:text-red-400 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              删除歌曲
+            </button>
+          )}
+        </div>
+
         {editState.message ? (
           <div
             className={`mt-4 ${
@@ -358,6 +442,18 @@ export function SongsImportForm({
             }`}
           >
             {editState.message}
+          </div>
+        ) : null}
+
+        {deleteState.message ? (
+          <div
+            className={`mt-4 ${
+              deleteState.status === "success"
+                ? "rounded-xl border border-emerald-500/40 bg-emerald-500/20 px-4 py-3 text-sm font-medium text-black dark:text-emerald-100"
+                : "rounded-xl border border-amber-500/40 bg-amber-500/20 px-4 py-3 text-sm font-medium text-black dark:text-amber-100"
+            }`}
+          >
+            {deleteState.message}
           </div>
         ) : null}
       </div>

@@ -29,6 +29,7 @@ describe("createSongResolver", () => {
     expect(resolveSong("ティアドロップス")).toEqual({
       status: "resolved",
       songId: 1,
+      title: "ティアドロップス",
     });
   });
 
@@ -47,6 +48,7 @@ describe("createSongResolver", () => {
     expect(resolveSong("STAR BEAT!~ホシノコドウ~", 3)).toEqual({
       status: "resolved",
       songId: 3,
+      title: "STAR BEAT!～ホシノコドウ～",
     });
     expect(resolveSong("完全不同的歌曲", 3).status).toBe(
       "selection-required",

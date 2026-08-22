@@ -3,6 +3,7 @@
 import { FilterIcon } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
+import { buildUserHref } from "@/lib/public-url";
 
 const eventernoteUserBaseUrl = "https://www.eventernote.com/users";
 
@@ -108,7 +109,7 @@ export function AdminUserCacheClient({
                     >
                       <td className="px-4 py-3 font-medium text-foreground">
                         <Link
-                          href={`/?userId=${encodeURIComponent(profileId)}`}
+                          href={buildUserHref(profileId)}
                           target="_blank"
                           rel="noreferrer"
                           className="transition hover:text-accent"

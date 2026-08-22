@@ -22,6 +22,7 @@
     "data:backfill:event-meta": "tsx scripts/backfill-event-meta.ts",
     "data:backfill:eventernote-users": "tsx scripts/backfill-eventernote-user-profiles.ts",
     "data:cleanup:event-titles": "tsx scripts/cleanup-event-title-tags.ts",
+    "data:cleanup:song-references": "tsx scripts/cleanup-song-references.ts",
     "data:import:songs": "tsx scripts/import-discography.ts",
     "db:seed": "tsx scripts/seed-all.ts"
   },

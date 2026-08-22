@@ -15,6 +15,13 @@
       "when": 1785514133625,
       "tag": "0001_natural_cloak",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787388556153,
+      "tag": "0002_misty_skrulls",
+      "breakpoints": true
     }
   ]
 }

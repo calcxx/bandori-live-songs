@@ -50,7 +50,7 @@ export function ResultsClient({
       <div id="export-capture" className="space-y-8">
         {/* Summary section */}
         <section id="summary" className="grid gap-2.5 lg:grid-cols-[1.35fr_0.65fr]">
-          <article className="rounded-[1.15rem] border border-border-soft bg-panel px-5 py-5 sm:px-6">
+          <article className="flex flex-col rounded-[1.15rem] border border-border-soft bg-panel px-5 py-5 sm:px-6">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
                 <h2 className="truncate font-heading text-2xl font-semibold sm:text-3xl" title={displayName ?? userId}>
@@ -82,33 +82,35 @@ export function ResultsClient({
               </div>
             </div>
 
-            <div className="mt-3 flex flex-wrap items-end justify-between gap-2">
-              <p className="text-sm text-ink-soft">
-                {localeCopy.heardProgress(state.stats.totalSummary.heardCount, state.stats.totalSummary.totalCount)}
-              </p>
-              <p className="font-heading text-3xl font-semibold leading-none">
-                {percentLabel(state.stats.totalSummary.percentage)}
-              </p>
-            </div>
+            <div className="mt-auto pt-3">
+              <div className="flex flex-wrap items-end justify-between gap-2">
+                <p className="text-sm text-ink-soft">
+                  {localeCopy.heardProgress(state.stats.totalSummary.heardCount, state.stats.totalSummary.totalCount)}
+                </p>
+                <p className="font-heading text-3xl font-semibold leading-none">
+                  {percentLabel(state.stats.totalSummary.percentage)}
+                </p>
+              </div>
 
-            <div className="mt-2 flex h-2.5 overflow-hidden rounded-full bg-border-soft">
-              {state.totalProgressSegments.map((segment) => (
-                <div
-                  key={segment.slug}
-                  className="h-full"
-                  title={`${segment.label} ${percentLabel(segment.width / 100)}`}
-                  style={{
-                    width: `${segment.width}%`,
-                    backgroundColor: segment.supportColor,
-                  }}
-                />
-              ))}
-            </div>
+              <div className="mt-2 flex h-2.5 overflow-hidden rounded-full bg-border-soft">
+                {state.totalProgressSegments.map((segment) => (
+                  <div
+                    key={segment.slug}
+                    className="h-full"
+                    title={`${segment.label} ${percentLabel(segment.width / 100)}`}
+                    style={{
+                      width: `${segment.width}%`,
+                      backgroundColor: segment.supportColor,
+                    }}
+                  />
+                ))}
+              </div>
 
-            <p className="mt-3 text-sm leading-6 text-ink-soft">{localeCopy.catalogSummaryNote}</p>
+              <p className="mt-3 text-sm leading-6 text-ink-soft">{localeCopy.catalogSummaryNote}</p>
+            </div>
           </article>
 
-          <article className="rounded-[1.15rem] border border-border-soft bg-panel px-5 py-5 sm:px-6">
+          <article className="flex flex-col rounded-[1.15rem] border border-border-soft bg-panel px-5 py-5 sm:px-6">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="text-sm text-ink-soft">{localeCopy.matchedEventsLabel}</p>
@@ -124,17 +126,32 @@ export function ResultsClient({
                 {localeCopy.hideSonglessActivities}
               </label>
             </div>
-            <div className="mt-3 flex items-start justify-between gap-3">
-              <div className="hidden space-y-1.5 text-sm leading-6 text-ink-soft lg:block">
-                <p>{localeCopy.collectedSetlists} {state.stats.collectedSetlistEvents.length}</p>
-                <p>{localeCopy.missingSetlists} {state.stats.missingSetlistEvents.length}</p>
+            {state.bandEventShareSegments.length > 0 ? (
+              <div className="mt-auto pt-4">
+                <p className="text-sm text-ink-soft">{localeCopy.bandEventShareLabel}</p>
+                <div
+                  className="mt-2 flex h-2.5 overflow-hidden rounded-full bg-border-soft"
+                  aria-label={localeCopy.bandEventShareLabel}
+                >
+                  {state.bandEventShareSegments.map((segment) => {
+                    const percentage = percentLabel(segment.width / 100);
+
+                    return (
+                      <div
+                        key={segment.slug}
+                        className="h-full"
+                        title={localeCopy.bandEventShareTooltip(segment.label, segment.count, percentage)}
+                        style={{
+                          width: `${segment.width}%`,
+                          backgroundColor: segment.supportColor,
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+                <div aria-hidden className="mt-3 hidden h-6 lg:block" />
               </div>
-              <p className="text-right text-sm leading-6 text-ink-soft lg:hidden">
-                {localeCopy.collectedSetlists} {state.stats.collectedSetlistEvents.length}
-                <span className="mx-1.5">·</span>
-                {localeCopy.missingSetlists} {state.stats.missingSetlistEvents.length}
-              </p>
-            </div>
+            ) : null}
           </article>
         </section>
 

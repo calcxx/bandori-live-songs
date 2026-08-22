@@ -34,6 +34,11 @@ const adminLinks = [
     description: "导入新歌曲，或修改已有歌曲的曲名、分类、乐队与发行日期。",
   },
   {
+    href: "/admin/band-search-aliases",
+    title: "乐队等效关键词",
+    description: "编辑各乐队用于活动混合检索的等效关键词。",
+  },
+  {
     href: "/admin/rules",
     title: "活动规则",
     description: "编辑活动屏蔽条件和标题清理标签。",

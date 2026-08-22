@@ -10,6 +10,7 @@ export type BandSeed = {
   musicbrainzArtistMbid: string | null;
   supportColor: string | null;
   aliases: string[];
+  searchAliases: string[];
 };
 
 export const PROJECT_COMMON_SLUG = "project-common";
@@ -25,6 +26,7 @@ export const BAND_SEEDS: BandSeed[] = [
     musicbrainzArtistMbid: null,
     supportColor: null,
     aliases: ["企划共通", "Project Common"],
+    searchAliases: [],
   },
   {
     slug: "poppin-party",
@@ -36,6 +38,7 @@ export const BAND_SEEDS: BandSeed[] = [
     musicbrainzArtistMbid: "9cacc8a5-fb40-4584-aea2-591172da6e84",
     supportColor: "#FF3377",
     aliases: ["Poppin'Party", "Poppin&#039;Party"],
+    searchAliases: ["ppp", "popipa", "ポピパ"],
   },
   {
     slug: "afterglow",
@@ -47,6 +50,7 @@ export const BAND_SEEDS: BandSeed[] = [
     musicbrainzArtistMbid: "3e0a5471-46af-4c01-bb2e-11b24c1b55fe",
     supportColor: "#EE3344",
     aliases: ["Afterglow"],
+    searchAliases: ["ag"],
   },
   {
     slug: "pastel-palettes",
@@ -58,6 +62,7 @@ export const BAND_SEEDS: BandSeed[] = [
     musicbrainzArtistMbid: "88ad1c3e-53f2-4279-9b75-f0b5bad6a4f6",
     supportColor: "#33DDAA",
     aliases: ["Pastel＊Palettes", "Pastel*Palettes", "Pastel✽Palettes"],
+    searchAliases: ["pp"],
   },
   {
     slug: "roselia",
@@ -69,6 +74,7 @@ export const BAND_SEEDS: BandSeed[] = [
     musicbrainzArtistMbid: "adea3c3d-a84d-4f9e-ac0b-1ef71a8947a5",
     supportColor: "#3344AA",
     aliases: ["Roselia"],
+    searchAliases: [],
   },
   {
     slug: "hello-happy-world",
@@ -80,6 +86,7 @@ export const BAND_SEEDS: BandSeed[] = [
     musicbrainzArtistMbid: "f547cbe6-8293-4a43-800d-f641313f304f",
     supportColor: "#FFDD00",
     aliases: ["ハロー、ハッピーワールド！", "ハロー、ハッピーワールド!", "Hello, Happy World!"],
+    searchAliases: ["hhw"],
   },
   {
     slug: "raise-a-suilen",
@@ -91,6 +98,7 @@ export const BAND_SEEDS: BandSeed[] = [
     musicbrainzArtistMbid: "a94984e8-ac5a-401d-8548-0f4eb2153f28",
     supportColor: "#33CCCC",
     aliases: ["RAISE A SUILEN", "RAISEASUILEN"],
+    searchAliases: ["ras"],
   },
   {
     slug: "morfonica",
@@ -102,6 +110,7 @@ export const BAND_SEEDS: BandSeed[] = [
     musicbrainzArtistMbid: "f7b13d35-d405-4c59-8ecf-0368c8b43ddd",
     supportColor: "#33AAFF",
     aliases: ["Morfonica", "Morƒonica"],
+    searchAliases: ["monica", "モニカ"],
   },
   {
     slug: "mygo",
@@ -113,6 +122,7 @@ export const BAND_SEEDS: BandSeed[] = [
     musicbrainzArtistMbid: "be91faa6-5277-4b73-b97c-10786db10598",
     supportColor: "#3388BB",
     aliases: ["MyGO!!!!!"],
+    searchAliases: ["mygo"],
   },
   {
     slug: "ave-mujica",
@@ -124,6 +134,7 @@ export const BAND_SEEDS: BandSeed[] = [
     musicbrainzArtistMbid: "3d3b99e4-1a07-49d5-9c47-cd2a4c156d6c",
     supportColor: "#881144",
     aliases: ["Ave Mujica"],
+    searchAliases: ["mujica"],
   },
   {
     slug: "mugendai-mewtype",
@@ -135,6 +146,7 @@ export const BAND_SEEDS: BandSeed[] = [
     musicbrainzArtistMbid: "5304247c-e212-41cf-8121-b428ff7f7d31",
     supportColor: "#FF7788",
     aliases: ["夢限大みゅーたいぷ", "夢限大MewType", "Mugendai Mewtype", "BDP Yumemita"],
+    searchAliases: ["梦限大", "yumemita", "ゆめみた"],
   },
   {
     slug: "millsage",
@@ -146,6 +158,7 @@ export const BAND_SEEDS: BandSeed[] = [
     musicbrainzArtistMbid: "7c3b45e4-9af0-424f-84bc-e1a61aff7a19",
     supportColor: "#AA22EE",
     aliases: ["millsage", "みるさーじゅ"],
+    searchAliases: [],
   },
   {
     slug: "ikka-dumb-rock",
@@ -157,6 +170,7 @@ export const BAND_SEEDS: BandSeed[] = [
     musicbrainzArtistMbid: "5ce8ca2d-7bba-4f39-80f8-8390ebddbc4d",
     supportColor: "#FFAA33",
     aliases: ["一家Dumb Rock!", "一家Dumb Rock！", "いっかだんらん"],
+    searchAliases: [],
   },
 ];
 

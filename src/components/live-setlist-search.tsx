@@ -11,13 +11,14 @@ import {
 import type { CopyDefinition } from "@/lib/i18n";
 import {
   clearStoredLiveSearch,
+  isCurrentEventSearchHistoryEntryExplicit,
+  markCurrentEventSearchHistoryEntryAsExplicit,
   readStoredLiveSearch,
   storeLiveSearch,
 } from "@/lib/live-setlist/history";
 import {
-  eventSearchTabValue,
-  liveEventIdParam,
-  searchTabParam,
+  buildEmptyEventSearchHref,
+  buildLiveSetlistHref,
 } from "@/lib/live-setlist/url";
 import type {
   LiveSetlist,
@@ -25,22 +26,52 @@ import type {
   LiveSetlistCandidatesResponse,
   LiveSetlistResponse,
 } from "@/lib/live-setlist/types";
+import { normalizeQuotesForDisplay } from "@/lib/music/title-utils";
 
 type SearchStatus = "idle" | "loading" | "ready" | "error";
+
+export type LiveSetlistSearchRestore = {
+  revision: number;
+  query: string;
+  live: LiveSetlist | null;
+  detailStatus: SearchStatus;
+};
 
 type LiveSetlistSearchProps = {
   copy: CopyDefinition;
   defaultLive: LiveSetlist | null;
+  historyRestore: LiveSetlistSearchRestore;
   onResultChange: (live: LiveSetlist | null) => void;
+  onEmptyStateChange: (visible: boolean) => void;
 };
+
+function updateEventIdInUrl(
+  eventernoteEventId: number | null,
+  push: boolean,
+) {
+  const url = new URL(window.location.href);
+  url.pathname =
+    eventernoteEventId === null
+      ? buildEmptyEventSearchHref()
+      : buildLiveSetlistHref(eventernoteEventId);
+  url.search = "";
+  const nextUrl = `${url.pathname}${url.hash}`;
+  if (push) {
+    window.history.pushState(null, "", nextUrl);
+  } else {
+    window.history.replaceState(null, "", nextUrl);
+  }
+}
 
 export function LiveSetlistSearch({
   copy,
   defaultLive,
+  historyRestore,
   onResultChange,
+  onEmptyStateChange,
 }: LiveSetlistSearchProps) {
   const [query, setQuery] = useState(defaultLive?.title ?? "");
-  const [selectedTitle, setSelectedTitle] = useState<string | null>(
+  const [selectedQuery, setSelectedQuery] = useState<string | null>(
     defaultLive?.title ?? null,
   );
   const [candidates, setCandidates] = useState<LiveSetlistCandidate[]>([]);
@@ -49,53 +80,59 @@ export function LiveSetlistSearch({
     defaultLive ? "ready" : "idle",
   );
   const [isComposing, setIsComposing] = useState(false);
+  const [lastHistoryRestoreRevision, setLastHistoryRestoreRevision] =
+    useState(historyRestore.revision);
   const debounceTimeoutRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const candidateRequestRef = useRef<AbortController | null>(null);
   const detailRequestRef = useRef<AbortController | null>(null);
+  const didRestoreInitialSearchRef = useRef(false);
 
-  function updateEventIdInUrl(
-    eventernoteEventId: number | null,
-    push: boolean,
-  ) {
-    const url = new URL(window.location.href);
-    if (eventernoteEventId === null) {
-      url.searchParams.delete(liveEventIdParam);
-      url.searchParams.delete("userId");
-      url.searchParams.set(
-        searchTabParam,
-        eventSearchTabValue,
-      );
-    } else {
-      url.searchParams.set(
-        liveEventIdParam,
-        String(eventernoteEventId),
-      );
-      url.searchParams.delete("userId");
-      url.searchParams.delete(searchTabParam);
-    }
-    const nextUrl = `${url.pathname}${url.search}${url.hash}`;
-    if (push) {
-      window.history.pushState(null, "", nextUrl);
-    } else {
-      window.history.replaceState(null, "", nextUrl);
-    }
+  if (lastHistoryRestoreRevision !== historyRestore.revision) {
+    setLastHistoryRestoreRevision(historyRestore.revision);
+    setQuery(historyRestore.query);
+    setSelectedQuery(historyRestore.live ? historyRestore.query : null);
+    setCandidates([]);
+    setSearchStatus("idle");
+    setDetailStatus(historyRestore.detailStatus);
+    setIsComposing(false);
   }
 
   useEffect(() => {
+    candidateRequestRef.current?.abort();
+    detailRequestRef.current?.abort();
+    if (debounceTimeoutRef.current !== null) {
+      window.clearTimeout(debounceTimeoutRef.current);
+    }
+  }, [historyRestore.revision]);
+
+  useEffect(() => {
+    if (didRestoreInitialSearchRef.current) {
+      return;
+    }
+    didRestoreInitialSearchRef.current = true;
+
     if (defaultLive) {
-      storeLiveSearch(defaultLive);
+      storeLiveSearch(defaultLive.title, defaultLive);
+      onEmptyStateChange(false);
+      return;
+    }
+    if (isCurrentEventSearchHistoryEntryExplicit()) {
+      onEmptyStateChange(true);
       return;
     }
     const stored = readStoredLiveSearch();
     if (!stored) {
+      onEmptyStateChange(true);
       return;
     }
+    onEmptyStateChange(false);
     const controller = new AbortController();
     const frame = window.requestAnimationFrame(() => {
       setQuery(stored.query);
-      setSelectedTitle(stored.live.title);
+      setSelectedQuery(stored.query);
       setDetailStatus("ready");
+      updateEventIdInUrl(stored.live.eventernoteEventId, false);
       onResultChange(stored.live);
     });
 
@@ -111,7 +148,7 @@ export function LiveSetlistSearch({
           return (await response.json()) as LiveSetlistResponse;
         })
         .then((data) => {
-          storeLiveSearch(data.live);
+          storeLiveSearch(stored.query, data.live);
           onResultChange(data.live);
         })
         .catch((error) => {
@@ -125,7 +162,7 @@ export function LiveSetlistSearch({
       controller.abort();
       window.cancelAnimationFrame(frame);
     };
-  }, [defaultLive, onResultChange]);
+  }, [defaultLive, onEmptyStateChange, onResultChange]);
 
   const searchCandidates = useCallback(async (value: string) => {
     const normalized = value.trim();
@@ -165,7 +202,7 @@ export function LiveSetlistSearch({
       window.clearTimeout(debounceTimeoutRef.current);
     }
 
-    if (isComposing || query === selectedTitle) {
+    if (isComposing || query === selectedQuery) {
       return;
     }
 
@@ -183,7 +220,7 @@ export function LiveSetlistSearch({
         window.clearTimeout(debounceTimeoutRef.current);
       }
     };
-  }, [isComposing, query, searchCandidates, selectedTitle]);
+  }, [isComposing, query, searchCandidates, selectedQuery]);
 
   useEffect(
     () => () => {
@@ -207,8 +244,9 @@ export function LiveSetlistSearch({
     const controller = new AbortController();
     detailRequestRef.current = controller;
 
-    setQuery(candidate.title);
-    setSelectedTitle(candidate.title);
+    const selectedSearchQuery = query;
+    onEmptyStateChange(false);
+    setSelectedQuery(selectedSearchQuery);
     setCandidates([]);
     setSearchStatus("idle");
     setDetailStatus("loading");
@@ -224,7 +262,8 @@ export function LiveSetlistSearch({
       }
 
       const data = (await response.json()) as LiveSetlistResponse;
-      storeLiveSearch(data.live);
+      storeLiveSearch(selectedSearchQuery, data.live);
+      markCurrentEventSearchHistoryEntryAsExplicit();
       updateEventIdInUrl(data.live.eventernoteEventId, true);
       onResultChange(data.live);
       setDetailStatus("ready");
@@ -252,14 +291,15 @@ export function LiveSetlistSearch({
                 onChange={(event) => {
                   const nextQuery = event.target.value;
                   setQuery(nextQuery);
-                  setSelectedTitle(null);
+                  setSelectedQuery(null);
                   setCandidates([]);
                   setSearchStatus("idle");
                   setDetailStatus("idle");
+                  updateEventIdInUrl(null, false);
                   onResultChange(null);
-                  if (nextQuery.length === 0) {
+                  onEmptyStateChange(nextQuery.trim().length === 0);
+                  if (nextQuery.trim().length === 0) {
                     clearStoredLiveSearch();
-                    updateEventIdInUrl(null, false);
                   }
                 }}
                 onCompositionStart={() => setIsComposing(true)}
@@ -280,14 +320,14 @@ export function LiveSetlistSearch({
                       window.clearTimeout(debounceTimeoutRef.current);
                     }
                     setQuery("");
-                    setSelectedTitle(null);
+                    setSelectedQuery(null);
                     setCandidates([]);
                     setSearchStatus("idle");
                     setDetailStatus("idle");
                     clearStoredLiveSearch();
                     updateEventIdInUrl(null, false);
                     onResultChange(null);
-                    inputRef.current?.focus();
+                    onEmptyStateChange(true);
                   }}
                 >
                   <XIcon className="h-4 w-4" aria-hidden="true" />
@@ -308,7 +348,7 @@ export function LiveSetlistSearch({
                       onClick={() => void selectCandidate(candidate)}
                     >
                       <span className="text-sm font-medium leading-snug text-foreground">
-                        {candidate.title}
+                        {normalizeQuotesForDisplay(candidate.title)}
                       </span>
                       <span className="mt-0.5 text-xs leading-snug text-ink-soft">
                         {candidate.eventDate}

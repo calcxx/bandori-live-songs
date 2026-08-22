@@ -18,6 +18,7 @@ export async function seedBands() {
           displayOrder: band.displayOrder,
           groupType: band.groupType,
           eventernoteActorId: band.eventernoteActorId,
+          searchAliases: band.searchAliases,
         })),
       )
       .onConflictDoUpdate({
@@ -28,6 +29,7 @@ export async function seedBands() {
           displayOrder: sql`excluded.display_order`,
           groupType: sql`excluded.group_type`,
           eventernoteActorId: sql`excluded.eventernote_actor_id`,
+          searchAliases: sql`excluded.search_aliases`,
           updatedAt: new Date(),
         },
       });

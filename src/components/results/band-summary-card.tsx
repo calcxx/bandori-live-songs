@@ -6,7 +6,7 @@ import { getBandSupportColor, getBandTextColor } from "@/lib/constants/bands";
 import { filterEventsByVisibilityRules, type EventVisibilityRules } from "@/lib/events/event-visibility";
 import type { CopyDefinition } from "@/lib/i18n";
 import { buildLiveSetlistHref } from "@/lib/live-setlist/url";
-import { formatSongTitleForDisplay } from "@/lib/music/title-utils";
+import { formatSongTitleForDisplay, normalizeQuotesForDisplay } from "@/lib/music/title-utils";
 import type { SongEventReference } from "@/lib/stats/aggregate";
 import type { useResultsState } from "./use-results-state";
 import { percentLabel, withAlpha } from "./utils";
@@ -205,7 +205,7 @@ export function BandSummaryCard({
                             >
                               <span className="font-medium">{event.eventDate}</span>
                               <span className="mx-1.5 text-ink-soft">·</span>
-                              <span>{event.title}</span>
+                              <span>{normalizeQuotesForDisplay(event.title)}</span>
                             </Link>
                           ))}
                         </div>

@@ -2,10 +2,20 @@
 
 import Link from "next/link";
 import { Loader2Icon } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { Activity, useEffect, useState, type MouseEvent } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import {
+  Activity,
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent,
+} from "react";
 import { LiveSetlistResult } from "@/components/live-setlist-result";
-import { LiveSetlistSearch } from "@/components/live-setlist-search";
+import {
+  LiveSetlistSearch,
+  type LiveSetlistSearchRestore,
+} from "@/components/live-setlist-search";
+import { RecentLiveSetlists } from "@/components/recent-live-setlists";
 import { LocaleToggle } from "@/components/locale-toggle";
 import { navPillLabel } from "@/components/nav-pill";
 import { PublicFooter } from "@/components/public-footer";
@@ -27,14 +37,22 @@ import { getCopy, type Locale } from "@/lib/i18n";
 import type { CopyDefinition } from "@/lib/i18n";
 import {
   readStoredLiveSearch,
+  storeLiveSearch,
 } from "@/lib/live-setlist/history";
-import type { LiveSetlist } from "@/lib/live-setlist/types";
+import type {
+  LiveSetlist,
+  LiveSetlistResponse,
+  RecentLiveSetlist,
+  RecentLiveSetlistsResponse,
+} from "@/lib/live-setlist/types";
 import {
   buildEmptyEventSearchHref,
   buildLiveSetlistHref,
 } from "@/lib/live-setlist/url";
 import { navigateToDemoHome } from "@/lib/navigate-demo-home";
 import { clearAwaitFreshAfterCookie } from "@/lib/manual-refresh-navigation";
+import { parsePublicPagePath } from "@/lib/public-page-path";
+import { buildUserHref } from "@/lib/public-url";
 import type { UserSongStatsResult } from "@/lib/stats/get-user-song-stats";
 
 type HomePageClientProps = {
@@ -49,6 +67,8 @@ type HomePageClientProps = {
   isAdminAuthenticated: boolean;
   eventVisibilityRules: EventVisibilityRules;
   defaultLive: LiveSetlist | null;
+  recentLiveSetlists: RecentLiveSetlist[];
+  onThisDayLiveSetlists: RecentLiveSetlist[];
   defaultSearchMode: SearchMode;
 };
 
@@ -66,6 +86,78 @@ const userStatsStorageKey = "bdr-user-stats-cache-v1";
 const userStatsOkCache = new Map<string, UserStatsOkResult>();
 const userStatsCacheLimit = 5;
 let userStatsCacheHydrated = false;
+const liveSetlistDetailCache = new Map<number, Promise<LiveSetlist>>();
+let recentLiveSetlistsRequest: Promise<RecentLiveSetlist[]> | null = null;
+let onThisDayLiveSetlistsRequest: Promise<RecentLiveSetlist[]> | null = null;
+
+function loadLiveSetlistDetail(eventernoteEventId: number) {
+  const cached = liveSetlistDetailCache.get(eventernoteEventId);
+  if (cached) {
+    return cached;
+  }
+
+  const request = fetch(
+    `/api/live-setlists?eventernoteEventId=${eventernoteEventId}`,
+  )
+    .then(async (response) => {
+      if (!response.ok) {
+        throw new Error(`Live setlist request failed: ${response.status}`);
+      }
+      const data = (await response.json()) as LiveSetlistResponse;
+      return data.live;
+    })
+    .catch((error) => {
+      liveSetlistDetailCache.delete(eventernoteEventId);
+      throw error;
+    });
+
+  liveSetlistDetailCache.set(eventernoteEventId, request);
+  return request;
+}
+
+function loadRecentLiveSetlists() {
+  if (recentLiveSetlistsRequest) {
+    return recentLiveSetlistsRequest;
+  }
+
+  recentLiveSetlistsRequest = fetch("/api/live-setlists?recent=1")
+    .then(async (response) => {
+      if (!response.ok) {
+        throw new Error(`Recent live setlists request failed: ${response.status}`);
+      }
+      const data = (await response.json()) as RecentLiveSetlistsResponse;
+      return data.events;
+    })
+    .catch((error) => {
+      recentLiveSetlistsRequest = null;
+      throw error;
+    });
+
+  return recentLiveSetlistsRequest;
+}
+
+function loadOnThisDayLiveSetlists() {
+  if (onThisDayLiveSetlistsRequest) {
+    return onThisDayLiveSetlistsRequest;
+  }
+
+  onThisDayLiveSetlistsRequest = fetch("/api/live-setlists?onThisDay=1")
+    .then(async (response) => {
+      if (!response.ok) {
+        throw new Error(
+          `On-this-day live setlists request failed: ${response.status}`,
+        );
+      }
+      const data = (await response.json()) as RecentLiveSetlistsResponse;
+      return data.events;
+    })
+    .catch((error) => {
+      onThisDayLiveSetlistsRequest = null;
+      throw error;
+    });
+
+  return onThisDayLiveSetlistsRequest;
+}
 
 function isCachedUserStats(value: unknown): value is UserStatsOkResult {
   if (!value || typeof value !== "object") {
@@ -165,14 +257,31 @@ export function HomePageClient({
   isAdminAuthenticated,
   eventVisibilityRules,
   defaultLive,
+  recentLiveSetlists,
+  onThisDayLiveSetlists,
   defaultSearchMode,
 }: HomePageClientProps) {
   const router = useRouter();
+  const pathname = usePathname();
+  const publicPagePath = parsePublicPagePath(pathname);
+  const pathDefaultSearchMode =
+    publicPagePath?.kind === "events" ||
+    publicPagePath?.kind === "event"
+      ? "live"
+      : publicPagePath?.kind === "home" ||
+          publicPagePath?.kind === "user"
+        ? "user"
+        : defaultSearchMode;
+  const pathDefaultLive =
+    publicPagePath?.kind === "event" &&
+    defaultLive?.eventernoteEventId ===
+      publicPagePath.eventernoteEventId
+      ? defaultLive
+      : null;
   const trimmedUserId = defaultUserId.trim();
   const [activeLocale, setActiveLocale] = useState(locale);
   const localeCopy = getCopy(activeLocale);
-  const hasDemoUser = demoUserId.length > 0;
-  const shouldLoadDefaultUser = hasDemoUser && !trimmedUserId && !result;
+  const shouldLoadDefaultUser = !trimmedUserId && !result;
   const [isRestoringStoredUser] = useState(
     () =>
       defaultSearchMode === "user" &&
@@ -183,10 +292,26 @@ export function HomePageClient({
   const [defaultUserLoading, setDefaultUserLoading] = useState(shouldLoadDefaultUser);
   // Client-side search mode state lets the tab switch render instantly;
   // the server navigation commits later and re-syncs the props below.
-  const [searchMode, setSearchMode] = useState(defaultSearchMode);
+  const [searchMode, setSearchMode] = useState(pathDefaultSearchMode);
   const [pendingUserTarget, setPendingUserTarget] = useState<string | null>(null);
   const [selectedLive, setSelectedLive] =
-    useState<LiveSetlist | null>(defaultLive);
+    useState<LiveSetlist | null>(pathDefaultLive);
+  const [showRecentLiveSetlists, setShowRecentLiveSetlists] =
+    useState(publicPagePath?.kind === "events");
+  const [availableRecentLiveSetlists, setAvailableRecentLiveSetlists] =
+    useState(recentLiveSetlists);
+  const [availableOnThisDayLiveSetlists, setAvailableOnThisDayLiveSetlists] =
+    useState(onThisDayLiveSetlists);
+  const [liveSearchRestore, setLiveSearchRestore] =
+    useState<LiveSetlistSearchRestore>({
+      revision: 0,
+      query: "",
+      live: null,
+      detailStatus: "idle",
+    });
+  const seriesNavigationSequenceRef = useRef(0);
+  const historyRestoreRevisionRef = useRef(0);
+  const selectedLiveRef = useRef(selectedLive);
 
   // Adjust client state when the committed server props change
   // (render-time sync, see react.dev/learn/you-might-not-need-an-effect).
@@ -194,10 +319,145 @@ export function HomePageClient({
   const [lastPropsSyncKey, setLastPropsSyncKey] = useState(propsSyncKey);
   if (lastPropsSyncKey !== propsSyncKey) {
     setLastPropsSyncKey(propsSyncKey);
-    setSearchMode(defaultSearchMode);
+    setSearchMode(pathDefaultSearchMode);
     setPendingUserTarget(null);
-    setSelectedLive(defaultLive);
+    setSelectedLive(pathDefaultLive);
+    setShowRecentLiveSetlists(publicPagePath?.kind === "events");
   }
+
+  useEffect(() => {
+    selectedLiveRef.current = selectedLive;
+  }, [selectedLive]);
+
+  useEffect(() => {
+    function restoreLiveSearch(
+      restore: Omit<LiveSetlistSearchRestore, "revision">,
+    ) {
+      historyRestoreRevisionRef.current += 1;
+      setLiveSearchRestore({
+        ...restore,
+        revision: historyRestoreRevisionRef.current,
+      });
+    }
+
+    function handlePopState() {
+      const target = parsePublicPagePath(window.location.pathname);
+      if (!target) return;
+
+      const navigationSequence = ++seriesNavigationSequenceRef.current;
+
+      if (target.kind === "events") {
+        setSearchMode("live");
+        setPendingUserTarget(null);
+        setSelectedLive(null);
+        setShowRecentLiveSetlists(true);
+        restoreLiveSearch({
+          query: "",
+          live: null,
+          detailStatus: "idle",
+        });
+        return;
+      }
+
+      if (target.kind === "event") {
+        setSearchMode("live");
+        setPendingUserTarget(null);
+        setShowRecentLiveSetlists(false);
+
+        const stored = readStoredLiveSearch();
+        const currentLive = selectedLiveRef.current;
+        const restoredLive =
+          currentLive?.eventernoteEventId === target.eventernoteEventId
+            ? currentLive
+            : stored?.live.eventernoteEventId ===
+                target.eventernoteEventId
+              ? stored.live
+              : null;
+        const restoredQuery =
+          stored?.live.eventernoteEventId === target.eventernoteEventId
+            ? stored.query
+            : (restoredLive?.title ?? "");
+
+        if (restoredLive) {
+          setSelectedLive(restoredLive);
+          restoreLiveSearch({
+            query: restoredQuery,
+            live: restoredLive,
+            detailStatus: "ready",
+          });
+          return;
+        }
+
+        setSelectedLive(null);
+        restoreLiveSearch({
+          query: "",
+          live: null,
+          detailStatus: "loading",
+        });
+        void loadLiveSetlistDetail(target.eventernoteEventId)
+          .then((live) => {
+            const activeTarget = parsePublicPagePath(
+              window.location.pathname,
+            );
+            if (
+              navigationSequence !==
+                seriesNavigationSequenceRef.current ||
+              activeTarget?.kind !== "event" ||
+              activeTarget.eventernoteEventId !==
+                target.eventernoteEventId
+            ) {
+              return;
+            }
+
+            storeLiveSearch(live.title, live);
+            setSelectedLive(live);
+            restoreLiveSearch({
+              query: live.title,
+              live,
+              detailStatus: "ready",
+            });
+          })
+          .catch((error) => {
+            const activeTarget = parsePublicPagePath(
+              window.location.pathname,
+            );
+            if (
+              navigationSequence !==
+                seriesNavigationSequenceRef.current ||
+              activeTarget?.kind !== "event" ||
+              activeTarget.eventernoteEventId !==
+                target.eventernoteEventId
+            ) {
+              return;
+            }
+            console.error("Failed to restore live setlist history", error);
+            restoreLiveSearch({
+              query: "",
+              live: null,
+              detailStatus: "error",
+            });
+          });
+        return;
+      }
+
+      setSearchMode("user");
+      setShowRecentLiveSetlists(false);
+      if (target.kind === "home") {
+        setPendingUserTarget(null);
+        return;
+      }
+
+      const normalizedUserId = normalizeEventernoteUserId(target.userId);
+      setPendingUserTarget(
+        isValidEventernoteUserId(normalizedUserId)
+          ? normalizedUserId
+          : null,
+      );
+    }
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   function handleSearchModeChange(mode: SearchMode) {
     if (mode === searchMode) {
@@ -211,11 +471,13 @@ export function HomePageClient({
       const storedLive =
         selectedLive ?? readStoredLiveSearch()?.live ?? null;
       setSelectedLive(storedLive);
-      router.push(
+      setShowRecentLiveSetlists(storedLive === null);
+      window.history.pushState(
+        null,
+        "",
         storedLive
           ? buildLiveSetlistHref(storedLive.eventernoteEventId)
           : buildEmptyEventSearchHref(),
-        { scroll: false },
       );
       return;
     }
@@ -224,13 +486,63 @@ export function HomePageClient({
       trimmedUserId || readStoredSuccessfulUserId();
     const normalizedStoredUserId = normalizeEventernoteUserId(storedUserId);
     const hasValidStoredUser = isValidEventernoteUserId(normalizedStoredUserId);
-    setPendingUserTarget(hasValidStoredUser ? normalizedStoredUserId : null);
+    const shouldUseDefaultUser =
+      !hasValidStoredUser ||
+      normalizeEventernoteUserCacheKey(normalizedStoredUserId) ===
+        normalizeEventernoteUserCacheKey(demoUserId);
+    setPendingUserTarget(
+      shouldUseDefaultUser ? null : normalizedStoredUserId,
+    );
+
+    if (shouldUseDefaultUser) {
+      // The default user is already being loaded in this client shell while
+      // the activity view is visible. Keep that state alive instead of
+      // remounting the shell through an App Router navigation, which would
+      // briefly restore its loading state before reading the session cache.
+      clearStoredSuccessfulUserId();
+      window.history.pushState(null, "", "/");
+      return;
+    }
+
     router.push(
-      hasValidStoredUser
-        ? `/?userId=${encodeURIComponent(normalizedStoredUserId)}`
-        : "/",
+      buildUserHref(normalizedStoredUserId),
       { scroll: false },
     );
+  }
+
+  function prefetchSeriesLive(eventernoteEventId: number) {
+    if (eventernoteEventId === selectedLive?.eventernoteEventId) {
+      return;
+    }
+    void loadLiveSetlistDetail(eventernoteEventId).catch(() => {});
+  }
+
+  async function handleSeriesLiveChange(eventernoteEventId: number) {
+    if (eventernoteEventId === selectedLive?.eventernoteEventId) {
+      return true;
+    }
+
+    const navigationSequence = ++seriesNavigationSequenceRef.current;
+    try {
+      const live = await loadLiveSetlistDetail(eventernoteEventId);
+      if (navigationSequence !== seriesNavigationSequenceRef.current) {
+        return false;
+      }
+
+      const storedQuery =
+        readStoredLiveSearch()?.query ?? selectedLive?.title ?? live.title;
+      storeLiveSearch(storedQuery, live);
+      setSelectedLive(live);
+
+      const url = new URL(window.location.href);
+      url.pathname = buildLiveSetlistHref(eventernoteEventId);
+      url.search = "";
+      window.history.replaceState(null, "", `${url.pathname}${url.hash}`);
+      return true;
+    } catch (error) {
+      console.error("Failed to switch live setlist", error);
+      return false;
+    }
   }
 
   function resetToDemoHome(event: MouseEvent<HTMLAnchorElement>) {
@@ -249,7 +561,7 @@ export function HomePageClient({
     if (isValidEventernoteUserId(storedUserId)) {
       if (defaultSearchMode === "user") {
         router.replace(
-          `/?userId=${encodeURIComponent(storedUserId)}`,
+          buildUserHref(storedUserId),
           { scroll: false },
         );
         return () => controller.abort();
@@ -293,6 +605,48 @@ export function HomePageClient({
       writeUserStatsCache(defaultUserResult);
     }
   }, [defaultUserResult]);
+
+  useEffect(() => {
+    if (availableRecentLiveSetlists.length > 0) {
+      return;
+    }
+
+    let cancelled = false;
+    void loadRecentLiveSetlists()
+      .then((events) => {
+        if (!cancelled) {
+          setAvailableRecentLiveSetlists(events);
+        }
+      })
+      .catch((error) => {
+        console.error("Failed to load recent live setlists", error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [availableRecentLiveSetlists.length]);
+
+  useEffect(() => {
+    if (availableOnThisDayLiveSetlists.length > 0) {
+      return;
+    }
+
+    let cancelled = false;
+    void loadOnThisDayLiveSetlists()
+      .then((events) => {
+        if (!cancelled) {
+          setAvailableOnThisDayLiveSetlists(events);
+        }
+      })
+      .catch((error) => {
+        console.error("Failed to load on-this-day live setlists", error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [availableOnThisDayLiveSetlists.length]);
 
   // While a user-mode navigation is in flight, only render stats that
   // already match the target user; otherwise fall back to the session
@@ -416,9 +770,11 @@ export function HomePageClient({
             </Activity>
             <Activity mode={searchMode === "live" ? "visible" : "hidden"}>
               <LiveSetlistSearch
-                defaultLive={defaultLive}
+                defaultLive={pathDefaultLive}
+                historyRestore={liveSearchRestore}
                 copy={localeCopy}
                 onResultChange={setSelectedLive}
+                onEmptyStateChange={setShowRecentLiveSetlists}
               />
             </Activity>
           </div>
@@ -431,19 +787,30 @@ export function HomePageClient({
               key={selectedLive.eventernoteEventId}
               live={selectedLive}
               copy={localeCopy}
+              onNavigateToLive={handleSeriesLiveChange}
+              onPrefetchLive={prefetchSeriesLive}
             />
+          ) : showRecentLiveSetlists ? (
+            <>
+              <RecentLiveSetlists
+                events={availableOnThisDayLiveSetlists}
+                copy={localeCopy}
+                title={localeCopy.onThisDaySetlistsTitle}
+              />
+              <RecentLiveSetlists
+                events={availableRecentLiveSetlists}
+                copy={localeCopy}
+              />
+            </>
           ) : null}
         </Activity>
 
         <Activity mode={searchMode === "user" ? "visible" : "hidden"}>
-          {pendingUserTarget === null &&
-          !trimmedUserId &&
-          hasDemoUser &&
-          displayResult ? (
+          {pendingUserTarget === null && !trimmedUserId && displayResult ? (
             <p className="mt-4 text-center text-sm text-ink-soft">
               {localeCopy.demoPrefix}
               <a
-                href={`https://www.eventernote.com/bd/user/${encodeURIComponent(demoUserId)}`}
+                href={`https://www.eventernote.com/bd/user/${encodeURIComponent(displayResult.userId)}`}
                 target="_blank"
                 rel="noreferrer"
                 className="font-medium text-foreground transition hover:text-accent"
