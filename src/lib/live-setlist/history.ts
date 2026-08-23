@@ -11,6 +11,16 @@ export type StoredLiveSearch = {
   needsRefresh?: boolean;
 };
 
+function clearLegacyStoredLiveSearch() {
+  try {
+    window.localStorage.removeItem(
+      LIVE_SEARCH_HISTORY_STORAGE_KEY,
+    );
+  } catch {
+    // Persistent storage may be disabled.
+  }
+}
+
 export function parseStoredLiveSearch(
   rawValue: string | null,
 ): StoredLiveSearch | null {
@@ -60,9 +70,10 @@ export function readStoredLiveSearch() {
     return null;
   }
 
+  clearLegacyStoredLiveSearch();
   try {
     return parseStoredLiveSearch(
-      window.localStorage.getItem(
+      window.sessionStorage.getItem(
         LIVE_SEARCH_HISTORY_STORAGE_KEY,
       ),
     );
@@ -72,12 +83,13 @@ export function readStoredLiveSearch() {
 }
 
 export function storeLiveSearch(query: string, live: LiveSetlist) {
+  clearLegacyStoredLiveSearch();
   try {
     const record: StoredLiveSearch = {
       query,
       live,
     };
-    window.localStorage.setItem(
+    window.sessionStorage.setItem(
       LIVE_SEARCH_HISTORY_STORAGE_KEY,
       JSON.stringify(record),
     );
@@ -87,12 +99,13 @@ export function storeLiveSearch(query: string, live: LiveSetlist) {
 }
 
 export function clearStoredLiveSearch() {
+  clearLegacyStoredLiveSearch();
   try {
-    window.localStorage.removeItem(
+    window.sessionStorage.removeItem(
       LIVE_SEARCH_HISTORY_STORAGE_KEY,
     );
   } catch {
-    // Storage may be disabled.
+    // Session storage may be disabled.
   }
 }
 

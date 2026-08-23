@@ -152,11 +152,23 @@ export async function fetchAllActorEvents(actorId: number, sourceBand: { slug: s
     nextPage = page.nextPage;
   }
 
+  if (firstPage.totalCount === null) {
+    throw new Error(
+      `Could not verify actor event count for ${sourceBand.nameJa} (${actorId}).`,
+    );
+  }
+
+  if (events.length !== firstPage.totalCount) {
+    throw new Error(
+      `Incomplete actor event fetch for ${sourceBand.nameJa} (${actorId}): expected ${firstPage.totalCount}, received ${events.length}.`,
+    );
+  }
+
   return {
     actorId,
     sourceBandSlug: sourceBand.slug,
     sourceBandName: sourceBand.nameJa,
-    totalCount: firstPage.totalCount ?? events.length,
+    totalCount: firstPage.totalCount,
     events,
   };
 }

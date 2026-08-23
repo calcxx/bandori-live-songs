@@ -69,7 +69,7 @@ export type CopyDefinition = {
   eventCoverageTitle: string;
   eventCoverageNote: string;
   eventUnlockSongsLabel: string;
-  eventUnlockSongsSuffix: string;
+  eventUnlockSongsSuffix: (count: number) => string;
   eventSetlistLabel: string;
   expandEventUnlocksAria: string;
   collapseEventUnlocksAria: string;
@@ -90,12 +90,13 @@ export type CopyDefinition = {
   songStatsSearchPlaceholder: string;
   songStatsSearchClearAria: string;
   songStatsSearchResultsLabel: string;
-  songStatsSearchResultsUnit: string;
+  songStatsSearchResultsUnit: (count: number) => string;
   songStatsSearchEmpty: string;
   songStatsRecordedEventsLabel: string;
-  songStatsRecordedEventsUnit: string;
+  songStatsRecordedEventsUnit: (count: number) => string;
   songStatsSongColumn: string;
   songStatsCountColumn: string;
+  songStatsLastPerformanceDateColumn: string;
   songStatsReleaseDateColumn: string;
   apiDocsFooter: string;
   demoPrefix: string;

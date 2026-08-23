@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { XIcon } from "lucide-react";
 import type { CSSProperties } from "react";
 import { getBandSupportColor, getBandTextColor } from "@/lib/constants/bands";
 import { filterEventsByVisibilityRules, type EventVisibilityRules } from "@/lib/events/event-visibility";
@@ -134,6 +135,7 @@ export function BandSummaryCard({
             });
             const isBandLoading = loadingBands[summary.slug] ?? false;
             const bandLoaded = loadedBands[summary.slug] ?? false;
+            const eventsPending = !bandLoaded || isBandLoading;
             const heardEventCount = relatedEvents.reduce(
               (count, event) =>
                 count +
@@ -170,15 +172,27 @@ export function BandSummaryCard({
 
                 {isActive ? (
                   <div className="absolute left-0 top-full z-20 mt-2 w-full min-w-0 rounded-[1rem] border border-border-soft bg-panel px-3 py-3 shadow-lg sm:min-w-[22rem]">
+                    {!eventsPending ? (
+                      <button
+                        type="button"
+                        aria-label={localeCopy.closeSongEventsAria}
+                        onClick={() =>
+                          toggleSongEvents(summary.slug, song.id, songIds)
+                        }
+                        className="absolute right-3 top-3 inline-flex h-7 w-7 items-center justify-center rounded-full border border-border-soft text-ink-soft transition hover:border-foreground hover:text-foreground"
+                      >
+                        <XIcon className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                    ) : null}
                     {relatedEvents.length > 0 ? (
                       <>
                         {song.firstReleaseDate ? (
-                          <p className="text-xs text-ink-soft">
+                          <p className="pr-9 text-xs text-ink-soft">
                             {localeCopy.releaseDateLabel(song.firstReleaseDate)}
                           </p>
                         ) : null}
                         <p
-                          className={`text-xs text-ink-soft ${
+                          className={`pr-9 text-xs text-ink-soft ${
                             song.firstReleaseDate ? "mt-1.5" : ""
                           }`}
                         >
@@ -210,10 +224,10 @@ export function BandSummaryCard({
                           ))}
                         </div>
                       </>
-                    ) : !bandLoaded || isBandLoading ? (
+                    ) : eventsPending ? (
                       <p className="text-sm text-ink-soft">{localeCopy.loadingEvents}</p>
                     ) : (
-                      <p className="text-sm text-ink-soft">{localeCopy.noSongEvents}</p>
+                      <p className="pr-9 text-sm text-ink-soft">{localeCopy.noSongEvents}</p>
                     )}
                   </div>
                 ) : null}

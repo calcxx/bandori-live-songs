@@ -175,7 +175,8 @@ export function EventCard({
           </p>
           {hasCollectedSetlist && newlyHeardSongs.length > 0 ? (
             <p className="text-sm text-ink-soft">
-              {localeCopy.eventUnlockSongsLabel} {newlyHeardSongs.length} {localeCopy.eventUnlockSongsSuffix}
+              {localeCopy.eventUnlockSongsLabel} {newlyHeardSongs.length}{" "}
+              {localeCopy.eventUnlockSongsSuffix(newlyHeardSongs.length)}
             </p>
           ) : null}
         </div>

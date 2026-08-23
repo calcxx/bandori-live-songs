@@ -4,12 +4,13 @@ import { connectDatabase, getDb } from "@/lib/db/core";
 import { emptyEventVisibilityRules } from "@/lib/events/event-visibility";
 import { readEventVisibilityRulesFromDb } from "@/lib/events/event-visibility-rules-store";
 import { fetchAllActorEvents, mergeActorEvents } from "./actor-events";
-import { getRecentEventDateWindow, upsertBandoriEventIndex } from "./bandori-event-index";
+import { getRecentEventDateWindow, syncBandoriEventIndex } from "./bandori-event-index";
 import { sanitizeEventernoteEventTitle } from "./event-meta";
 import type { ActorEventRankingEntry } from "./actor-events";
 
 export type BandoriActorEventsRefreshResult = {
   indexedEventCount: number;
+  removedEventCount: number;
   updatedAt: string;
 };
 
@@ -88,12 +89,13 @@ export async function refreshBandoriActorEvents(): Promise<BandoriActorEventsRef
   const rules =
     (await readEventVisibilityRulesFromDb(db)) ??
     emptyEventVisibilityRules;
-  const indexedEventCount = await upsertBandoriEventIndex(
+  const { indexedEventCount, removedEventCount } = await syncBandoriEventIndex(
     sanitizeActorEventTitles(mergedEvents, rules.titleTagsToStrip),
     db,
   );
   return {
     indexedEventCount,
+    removedEventCount,
     updatedAt: new Date().toISOString(),
   };
 }
@@ -106,12 +108,13 @@ export async function refreshBandoriActorEventsDirect(): Promise<BandoriActorEve
     const rules =
       (await readEventVisibilityRulesFromDb(db)) ??
       emptyEventVisibilityRules;
-    const indexedEventCount = await upsertBandoriEventIndex(
+    const { indexedEventCount, removedEventCount } = await syncBandoriEventIndex(
       sanitizeActorEventTitles(mergedEvents, rules.titleTagsToStrip),
       db,
     );
     return {
       indexedEventCount,
+      removedEventCount,
       updatedAt: new Date().toISOString(),
     };
   } finally {

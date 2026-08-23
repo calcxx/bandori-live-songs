@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { parseStoredLiveSearch } from "@/lib/live-setlist/history";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  LIVE_SEARCH_HISTORY_STORAGE_KEY,
+  parseStoredLiveSearch,
+  readStoredLiveSearch,
+  storeLiveSearch,
+} from "@/lib/live-setlist/history";
 import {
   buildEmptyEventSearchHref,
   buildLiveSetlistHref,
@@ -7,6 +12,10 @@ import {
 import { buildUserHref } from "@/lib/public-url";
 
 describe("live search history", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("parses a completed live search", () => {
     const record = {
       query: "MyGO!!!!! 7th LIVE",
@@ -74,5 +83,40 @@ describe("live search history", () => {
 
   it("builds a user page URL", () => {
     expect(buildUserHref(" sample_user ")).toBe("/users/sample_user");
+  });
+
+  it("stores activity history only for the current browser tab", () => {
+    const localValues = new Map<string, string>([
+      [LIVE_SEARCH_HISTORY_STORAGE_KEY, "legacy"],
+    ]);
+    const sessionValues = new Map<string, string>();
+    const createStorage = (values: Map<string, string>) => ({
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+      removeItem: (key: string) => values.delete(key),
+    });
+    vi.stubGlobal("window", {
+      localStorage: createStorage(localValues),
+      sessionStorage: createStorage(sessionValues),
+    });
+    const live = {
+      eventernoteEventId: 100001,
+      title: "Sample Live 2026",
+      eventDate: "2026-01-10",
+      venue: null,
+      performingBands: [],
+      series: null,
+      entries: [],
+    };
+
+    storeLiveSearch("Sample Live", live);
+
+    expect(localValues.has(LIVE_SEARCH_HISTORY_STORAGE_KEY)).toBe(false);
+    expect(sessionValues.has(LIVE_SEARCH_HISTORY_STORAGE_KEY)).toBe(true);
+    expect(readStoredLiveSearch()).toEqual({
+      query: "Sample Live",
+      live,
+      needsRefresh: undefined,
+    });
   });
 });

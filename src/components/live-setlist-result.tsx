@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Loader2Icon } from "lucide-react";
+import { Loader2Icon, XIcon } from "lucide-react";
 import {
   useEffect,
   useMemo,
@@ -60,13 +60,22 @@ function collectSelectedCopyText(node: Node, chunks: string[]) {
   }
 }
 
-function getSelectedCopyText(selection: Selection) {
+function getSelectedCopyText(selection: Selection, container: HTMLElement) {
   const chunks: string[] = [];
   for (let index = 0; index < selection.rangeCount; index += 1) {
-    collectSelectedCopyText(
-      selection.getRangeAt(index).cloneContents(),
-      chunks,
-    );
+    const selectedRange = selection.getRangeAt(index);
+    if (!selectedRange.intersectsNode(container)) {
+      continue;
+    }
+
+    const clippedRange = selectedRange.cloneRange();
+    if (!container.contains(clippedRange.startContainer)) {
+      clippedRange.setStart(container, 0);
+    }
+    if (!container.contains(clippedRange.endContainer)) {
+      clippedRange.setEnd(container, container.childNodes.length);
+    }
+    collectSelectedCopyText(clippedRange.cloneContents(), chunks);
   }
 
   return chunks
@@ -98,6 +107,7 @@ export function LiveSetlistResult({
   const [pendingSeriesEventId, setPendingSeriesEventId] = useState<
     number | null
   >(null);
+  const setlistRef = useRef<HTMLElement>(null);
   const activeSeriesTabRef = useRef<HTMLAnchorElement>(null);
   const songIds = useMemo(
     () => [
@@ -126,6 +136,32 @@ export function LiveSetlistResult({
         (tabList.clientWidth - activeTab.clientWidth) / 2,
     );
   }, [live.eventernoteEventId]);
+
+  useEffect(() => {
+    function handleSetlistCopy(event: ClipboardEvent) {
+      const selection = window.getSelection();
+      const setlist = setlistRef.current;
+      if (
+        !selection ||
+        selection.isCollapsed ||
+        !setlist ||
+        setlist.getClientRects().length === 0
+      ) {
+        return;
+      }
+
+      const selectedText = getSelectedCopyText(selection, setlist);
+      if (!selectedText || !event.clipboardData) {
+        return;
+      }
+
+      event.preventDefault();
+      event.clipboardData.setData("text/plain", selectedText);
+    }
+
+    document.addEventListener("copy", handleSetlistCopy);
+    return () => document.removeEventListener("copy", handleSetlistCopy);
+  }, []);
 
   async function loadSongEvents() {
     if (eventsLoaded || eventsLoading || songIds.length === 0) {
@@ -197,24 +233,9 @@ export function LiveSetlistResult({
     }
   }
 
-  function handleSetlistCopy(event: React.ClipboardEvent<HTMLElement>) {
-    const selection = window.getSelection();
-    if (!selection || selection.isCollapsed) {
-      return;
-    }
-
-    const selectedText = getSelectedCopyText(selection);
-    if (!selectedText) {
-      return;
-    }
-
-    event.preventDefault();
-    event.clipboardData.setData("text/plain", selectedText);
-  }
-
   return (
     <section
-      onCopy={handleSetlistCopy}
+      ref={setlistRef}
       className="mt-8 select-text rounded-[1.15rem] border border-border-soft bg-panel px-5 py-6 sm:px-6"
     >
       <h2
@@ -330,6 +351,7 @@ export function LiveSetlistResult({
             entry.songId === null
               ? []
               : songEventsBySongId[entry.songId] ?? [];
+          const eventsPending = !eventsLoaded || eventsLoading;
 
           return (
             <li
@@ -370,15 +392,26 @@ export function LiveSetlistResult({
               </button>
               {isActive ? (
                 <div className="absolute left-0 top-full z-20 mt-2 max-w-full rounded-[1rem] border border-border-soft bg-panel px-3 py-3 text-left font-normal text-foreground shadow-lg sm:left-[2.875rem] sm:min-w-[24rem] sm:max-w-[calc(100%-2.875rem)]">
+                  {!eventsPending ? (
+                    <button
+                      type="button"
+                      data-copy-exclude
+                      aria-label={copy.closeSongEventsAria}
+                      onClick={() => setActiveEntryKey(null)}
+                      className="absolute right-3 top-3 inline-flex h-7 w-7 select-none items-center justify-center rounded-full border border-border-soft text-ink-soft transition hover:border-foreground hover:text-foreground"
+                    >
+                      <XIcon className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  ) : null}
                   {relatedEvents.length > 0 ? (
                     <>
                       {entry.firstReleaseDate ? (
-                        <p className="text-xs text-ink-soft">
+                        <p className="pr-9 text-xs text-ink-soft">
                           {copy.releaseDateLabel(entry.firstReleaseDate)}
                         </p>
                       ) : null}
                       <p
-                        className={`text-xs text-ink-soft ${
+                        className={`pr-9 text-xs text-ink-soft ${
                           entry.firstReleaseDate ? "mt-1.5" : ""
                         }`}
                       >
@@ -413,12 +446,12 @@ export function LiveSetlistResult({
                         ))}
                       </div>
                     </>
-                  ) : !eventsLoaded || eventsLoading ? (
+                  ) : eventsPending ? (
                     <p className="text-sm text-ink-soft">
                       {copy.loadingEvents}
                     </p>
                   ) : (
-                    <p className="text-sm text-ink-soft">
+                    <p className="pr-9 text-sm text-ink-soft">
                       {copy.noSongEvents}
                     </p>
                   )}

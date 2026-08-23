@@ -38,7 +38,10 @@ import type {
 
 const allBandsValue = "all";
 
-type SortColumn = "performanceCount" | "firstReleaseDate";
+type SortColumn =
+  | "performanceCount"
+  | "lastPerformanceDate"
+  | "firstReleaseDate";
 type SortDirection = "asc" | "desc";
 
 function compareNullableDates(
@@ -133,21 +136,26 @@ export function SongsStatsPageClient({
         );
 
     return [...filteredStats].sort((left, right) => {
+      const selectedDate =
+        sortColumn === "firstReleaseDate"
+          ? "firstReleaseDate"
+          : sortColumn === "lastPerformanceDate"
+            ? "lastPerformanceDate"
+            : null;
       if (
-        sortColumn === "firstReleaseDate" &&
-        (left.firstReleaseDate === null ||
-          right.firstReleaseDate === null)
+        selectedDate &&
+        (left[selectedDate] === null || right[selectedDate] === null)
       ) {
-        if (left.firstReleaseDate === right.firstReleaseDate) return 0;
-        return left.firstReleaseDate === null ? 1 : -1;
+        if (left[selectedDate] === right[selectedDate]) return 0;
+        return left[selectedDate] === null ? 1 : -1;
       }
 
       const valueDelta =
         sortColumn === "performanceCount"
           ? left.performanceCount - right.performanceCount
           : compareNullableDates(
-              left.firstReleaseDate,
-              right.firstReleaseDate,
+              left[sortColumn],
+              right[sortColumn],
             );
 
       if (valueDelta !== 0) {
@@ -435,14 +443,14 @@ export function SongsStatsPageClient({
           </strong>
           <span>
             {deferredSearchQuery
-              ? copy.songStatsSearchResultsUnit
-              : copy.songStatsRecordedEventsUnit}
+              ? copy.songStatsSearchResultsUnit(visibleStats.length)
+              : copy.songStatsRecordedEventsUnit(recordedEventCount)}
           </span>
         </p>
 
         <section className="mt-3 rounded-[1.15rem] border border-border-soft bg-panel">
           <table className="w-full border-collapse text-left text-sm">
-            <thead className="border-b border-border-soft bg-panel-strong text-xs text-ink-soft">
+            <thead className="sticky top-16 z-40 border-b border-border-soft bg-panel-strong text-xs text-ink-soft">
               <tr>
                 <th
                   scope="col"
@@ -452,7 +460,7 @@ export function SongsStatsPageClient({
                 </th>
                 <th
                   scope="col"
-                  className="w-16 px-2 py-3 text-right font-medium sm:w-20 sm:px-4"
+                  className="w-16 px-2 py-3 text-right font-medium sm:w-16 sm:px-2"
                   aria-sort={
                     sortColumn === "performanceCount"
                       ? sortDirection === "asc"
@@ -472,7 +480,27 @@ export function SongsStatsPageClient({
                 </th>
                 <th
                   scope="col"
-                  className="w-32 rounded-tr-[1.1rem] px-4 py-3 text-right font-medium sm:w-40 sm:px-5"
+                  className="w-28 rounded-tr-[1.1rem] px-2 py-3 text-right font-medium sm:w-32 sm:rounded-none"
+                  aria-sort={
+                    sortColumn === "lastPerformanceDate"
+                      ? sortDirection === "asc"
+                        ? "ascending"
+                        : "descending"
+                      : "none"
+                  }
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggleSort("lastPerformanceDate")}
+                    className="ml-auto inline-flex items-center gap-1 transition hover:text-foreground"
+                  >
+                    <span>{copy.songStatsLastPerformanceDateColumn}</span>
+                    {renderSortIcon("lastPerformanceDate")}
+                  </button>
+                </th>
+                <th
+                  scope="col"
+                  className="hidden w-32 rounded-tr-[1.1rem] px-3 py-3 text-right font-medium sm:table-cell"
                   aria-sort={
                     sortColumn === "firstReleaseDate"
                       ? sortDirection === "asc"
@@ -496,7 +524,7 @@ export function SongsStatsPageClient({
               {visibleStats.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={3}
+                    colSpan={4}
                     className="px-4 py-10 text-center text-sm text-ink-soft sm:px-5"
                   >
                     {copy.songStatsSearchEmpty}
@@ -514,6 +542,7 @@ export function SongsStatsPageClient({
                 const eventsLoaded = loadedSongIds[song.id] ?? false;
                 const eventsLoading =
                   loadingSongIds[song.id] ?? false;
+                const eventsPending = !eventsLoaded || eventsLoading;
 
                 return (
                   <tr
@@ -560,30 +589,32 @@ export function SongsStatsPageClient({
                         <div
                           id={`song-events-${song.id}`}
                           data-song-events-popover
-                          className="absolute left-0 top-full z-20 mt-2 w-[calc(100vw-2rem)] max-w-[calc(64rem-2rem)] rounded-[1rem] border border-border-soft bg-panel px-3 py-3 text-left font-normal text-foreground shadow-lg sm:w-[calc(100vw-4rem)] sm:max-w-[calc(64rem-4rem)]"
+                          className="absolute left-0 top-full z-20 mt-2 w-max max-w-[calc(100vw-2rem)] rounded-[1rem] border border-border-soft bg-panel px-3 py-3 text-left font-normal text-foreground shadow-lg sm:min-w-96 sm:max-w-[calc(100vw-4rem)] lg:max-w-[60rem]"
                         >
-                          <button
-                            type="button"
-                            aria-label={copy.closeSongEventsAria}
-                            onClick={() => setActiveSongId(null)}
-                            className="absolute right-3 top-3 inline-flex h-7 w-7 items-center justify-center rounded-full border border-border-soft text-ink-soft transition hover:border-foreground hover:text-foreground"
-                          >
-                            <XIcon
-                              className="h-4 w-4"
-                              aria-hidden="true"
-                            />
-                          </button>
+                          {!eventsPending ? (
+                            <button
+                              type="button"
+                              aria-label={copy.closeSongEventsAria}
+                              onClick={() => setActiveSongId(null)}
+                              className="absolute right-3 top-3 inline-flex h-7 w-7 items-center justify-center rounded-full border border-border-soft text-ink-soft transition hover:border-foreground hover:text-foreground"
+                            >
+                              <XIcon
+                                className="h-4 w-4"
+                                aria-hidden="true"
+                              />
+                            </button>
+                          ) : null}
                           {relatedEvents.length > 0 ? (
                             <>
                               {song.firstReleaseDate ? (
-                                <p className="text-xs text-ink-soft">
+                                <p className="pr-9 text-xs text-ink-soft">
                                   {copy.releaseDateLabel(
                                     song.firstReleaseDate,
                                   )}
                                 </p>
                               ) : null}
                               <p
-                                className={`${song.firstReleaseDate ? "mt-1.5" : ""} text-xs text-ink-soft`}
+                                className={`${song.firstReleaseDate ? "mt-1.5" : ""} pr-9 text-xs text-ink-soft`}
                               >
                                 {copy.relatedEventsLabel(
                                   relatedEvents.length,
@@ -611,23 +642,28 @@ export function SongsStatsPageClient({
                                 ))}
                               </div>
                             </>
-                          ) : !eventsLoaded || eventsLoading ? (
+                          ) : eventsPending ? (
                             <p className="text-sm text-ink-soft">
                               {copy.loadingEvents}
                             </p>
                           ) : (
-                            <p className="text-sm text-ink-soft">
+                            <p className="pr-9 text-sm text-ink-soft">
                               {copy.noSongEvents}
                             </p>
                           )}
                         </div>
                       ) : null}
                     </td>
-                    <td className="px-2 py-2.5 text-right tabular-nums text-foreground sm:px-4">
+                    <td className="px-2 py-2.5 text-right tabular-nums text-foreground">
                       {song.performanceCount}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-2.5 text-right text-ink-soft sm:px-5">
-                      {song.firstReleaseDate ?? "—"}
+                    <td className="whitespace-nowrap px-2 py-2.5 text-right text-ink-soft">
+                      {song.performanceCount > 0
+                        ? song.lastPerformanceDate
+                        : null}
+                    </td>
+                    <td className="hidden whitespace-nowrap px-3 py-2.5 text-right text-ink-soft sm:table-cell">
+                      {song.firstReleaseDate}
                     </td>
                   </tr>
                 );

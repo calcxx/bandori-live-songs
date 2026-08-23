@@ -22,7 +22,9 @@ describe("locale resolution", () => {
     ["zh-MO", "zh-tw"],
     ["ja", "ja"],
     ["ja-JP", "ja"],
-    ["en-US", "zh-cn"],
+    ["en", "en"],
+    ["en-US", "en"],
+    ["en-GB", "en"],
     ["fr", "zh-cn"],
   ] satisfies [string, Locale][])("maps %s to %s", (language, expected) => {
     expect(resolveLocaleFromLanguage(language)).toBe(expected);
@@ -30,7 +32,7 @@ describe("locale resolution", () => {
 
   it("only considers the first requested language", () => {
     expect(resolveLocaleFromAcceptLanguage("ja-JP,zh-CN;q=0.9")).toBe("ja");
-    expect(resolveLocaleFromAcceptLanguage("en-US,ja-JP;q=0.9")).toBe(defaultLocale);
+    expect(resolveLocaleFromAcceptLanguage("en-US,ja-JP;q=0.9")).toBe("en");
     expect(resolveLocaleFromAcceptLanguage(null)).toBe(defaultLocale);
   });
 
@@ -38,15 +40,17 @@ describe("locale resolution", () => {
     expect(normalizeStoredLocale("zh-cn")).toBe("zh-cn");
     expect(normalizeStoredLocale("zh-tw")).toBe("zh-tw");
     expect(normalizeStoredLocale("ja")).toBe("ja");
+    expect(normalizeStoredLocale("en")).toBe("en");
     expect(normalizeStoredLocale("cn")).toBe("zh-cn");
     expect(normalizeStoredLocale("jp")).toBe("ja");
-    expect(normalizeStoredLocale("en")).toBeNull();
+    expect(normalizeStoredLocale("fr")).toBeNull();
   });
 
   it("provides the correct document language", () => {
     expect(getHtmlLang("zh-cn")).toBe("zh-CN");
     expect(getHtmlLang("zh-tw")).toBe("zh-TW");
     expect(getHtmlLang("ja")).toBe("ja");
+    expect(getHtmlLang("en")).toBe("en");
   });
 });
 
@@ -56,5 +60,6 @@ describe("localized copy", () => {
 
     expect(Object.keys(getCopy("zh-tw")).sort()).toEqual(simplifiedChineseKeys);
     expect(Object.keys(getCopy("ja")).sort()).toEqual(simplifiedChineseKeys);
+    expect(Object.keys(getCopy("en")).sort()).toEqual(simplifiedChineseKeys);
   });
 });

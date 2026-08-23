@@ -5,6 +5,7 @@ import {
   countDistinct,
   desc,
   eq,
+  max,
 } from "drizzle-orm";
 import { unstable_cache } from "next/cache";
 import { getDb } from "@/lib/db/core";
@@ -23,6 +24,7 @@ export type SongPerformanceStat = {
   category: SongCategory;
   firstReleaseDate: string | null;
   performanceCount: number;
+  lastPerformanceDate: string | null;
 };
 
 export type SongStatsEventCounts = {
@@ -40,9 +42,11 @@ const getSongPerformanceStatsCached = unstable_cache(
         category: songs.category,
         firstReleaseDate: songs.firstReleaseDate,
         performanceCount: countDistinct(setlistEntries.eventId),
+        lastPerformanceDate: max(events.eventDate),
       })
       .from(songs)
       .leftJoin(setlistEntries, eq(setlistEntries.songId, songs.id))
+      .leftJoin(events, eq(events.id, setlistEntries.eventId))
       .groupBy(
         songs.id,
         songs.title,
@@ -61,7 +65,7 @@ const getSongPerformanceStatsCached = unstable_cache(
       performanceCount: Number(row.performanceCount),
     }));
   },
-  ["song-performance-stats-v2"],
+  ["song-performance-stats-v3"],
   {
     revalidate: 60 * 5,
     tags: ["song-catalog", "song-events"],

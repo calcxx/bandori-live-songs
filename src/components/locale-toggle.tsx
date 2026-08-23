@@ -17,6 +17,7 @@ const options = [
   { value: "zh-cn", compactLabel: "简", label: "简体中文" },
   { value: "zh-tw", compactLabel: "繁", label: "繁體中文" },
   { value: "ja", compactLabel: "日", label: "日本語" },
+  { value: "en", compactLabel: "EN", label: "English" },
 ] as const satisfies readonly {
   value: Locale;
   compactLabel: string;

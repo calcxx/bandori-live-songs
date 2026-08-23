@@ -3,7 +3,9 @@ import { refreshBandoriActorEventsDirect } from "../src/lib/eventernote/event-ra
 
 export async function refreshRecentEventSnapshot() {
   const result = await refreshBandoriActorEventsDirect();
-  console.info(`[event-recent] indexed ${result.indexedEventCount} events at ${result.updatedAt}`);
+  console.info(
+    `[event-recent] indexed ${result.indexedEventCount} events, removed ${result.removedEventCount} stale events at ${result.updatedAt}`,
+  );
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

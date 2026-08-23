@@ -1,4 +1,14 @@
-import { and, asc, desc, gte, inArray, lte, max, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  gte,
+  inArray,
+  lte,
+  max,
+  notInArray,
+  sql,
+} from "drizzle-orm";
 import { getDb } from "@/lib/db/core";
 import { bandoriEventIndex } from "@/lib/db/schema";
 import type { ActorEventRankingEntry } from "./actor-events";
@@ -60,36 +70,51 @@ export function toBandoriEventIndexRows(entries: ActorEventRankingEntry[], now =
   }));
 }
 
-export async function upsertBandoriEventIndex(
+export async function syncBandoriEventIndex(
   entries: ActorEventRankingEntry[],
   db: ReturnType<typeof getDb> = getDb(),
 ) {
   const rows = toBandoriEventIndexRows(entries);
   if (rows.length === 0) {
-    return 0;
+    throw new Error("Refusing to replace the event index with an empty snapshot.");
   }
 
-  for (let offset = 0; offset < rows.length; offset += UPSERT_BATCH_SIZE) {
-    const batch = rows.slice(offset, offset + UPSERT_BATCH_SIZE);
-    await db
-      .insert(bandoriEventIndex)
-      .values(batch)
-      .onConflictDoUpdate({
-        target: bandoriEventIndex.eventernoteEventId,
-        set: {
-          title: sql`excluded.title`,
-          eventDate: sql`excluded.event_date`,
-          venue: sql`excluded.venue`,
-          sourceUrl: sql`excluded.source_url`,
-          attendeeCount: sql`excluded.attendee_count`,
-          bandSlugs: sql`excluded.band_slugs`,
-          bandNames: sql`excluded.band_names`,
-          updatedAt: sql`excluded.updated_at`,
-        },
-      });
-  }
+  return db.transaction(async (transaction) => {
+    for (let offset = 0; offset < rows.length; offset += UPSERT_BATCH_SIZE) {
+      const batch = rows.slice(offset, offset + UPSERT_BATCH_SIZE);
+      await transaction
+        .insert(bandoriEventIndex)
+        .values(batch)
+        .onConflictDoUpdate({
+          target: bandoriEventIndex.eventernoteEventId,
+          set: {
+            title: sql`excluded.title`,
+            eventDate: sql`excluded.event_date`,
+            venue: sql`excluded.venue`,
+            sourceUrl: sql`excluded.source_url`,
+            attendeeCount: sql`excluded.attendee_count`,
+            bandSlugs: sql`excluded.band_slugs`,
+            bandNames: sql`excluded.band_names`,
+            updatedAt: sql`excluded.updated_at`,
+          },
+        });
+    }
 
-  return rows.length;
+    const removedRows = await transaction
+      .delete(bandoriEventIndex)
+      .where(
+        notInArray(
+          bandoriEventIndex.eventernoteEventId,
+          rows.map((row) => row.eventernoteEventId),
+        ),
+      )
+      .returning({ eventernoteEventId: bandoriEventIndex.eventernoteEventId });
+
+    return {
+      indexedEventCount: rows.length,
+      removedEventCount: removedRows.length,
+    };
+  });
 }
 
 export async function lookupBandoriEventIndex(

@@ -24,6 +24,7 @@ export async function GET(request: Request) {
   return Response.json({
     ok: true,
     indexedEventCount: result.indexedEventCount,
+    removedEventCount: result.removedEventCount,
     updatedAt: result.updatedAt,
   });
 }

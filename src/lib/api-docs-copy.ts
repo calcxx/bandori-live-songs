@@ -55,6 +55,24 @@ const copy = {
     openapi: "OpenAPI 定義",
     response: "レスポンス例",
   },
+  en: {
+    title: "Open API",
+    description:
+      "Access the bands, songs, events, and setlists maintained by this site through a read-only JSON API.",
+    quickStart: "Quick Start",
+    endpoints: "Endpoint",
+    endpointDescription: "Purpose",
+    notes: "Usage Notes",
+    notesBody:
+      "No API key is required, and cross-origin requests are allowed. Song and event lists return 500 items by default, with a maximum of 1,000 per request. When another page is available, continue with the nextCursor value from the response. The service is provided as is, with no availability SLA.",
+    bands: "List all bands",
+    songs: "Search songs and categories",
+    events: "Search events with recorded setlists",
+    eventDetail: "Get an event and its complete setlist",
+    songEvents: "Get events where a song was performed",
+    openapi: "OpenAPI specification",
+    response: "Example Response",
+  },
 } as const;
 
 export function getApiDocsCopy(locale: Locale) {
