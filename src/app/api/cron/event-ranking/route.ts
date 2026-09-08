@@ -1,4 +1,4 @@
-import { updateTag } from "next/cache";
+import { revalidateTag } from "next/cache";
 import { refreshBandoriActorEvents } from "@/lib/eventernote/event-ranking-snapshot";
 
 export const runtime = "nodejs";
@@ -19,7 +19,9 @@ export async function GET(request: Request) {
   }
 
   const result = await refreshBandoriActorEvents();
-  updateTag("open-api-v1");
+  for (const tag of ["open-api-v1", "song-events", "live-setlist-search"]) {
+    revalidateTag(tag, { expire: 0 });
+  }
 
   return Response.json({
     ok: true,

@@ -9,10 +9,6 @@ export function normalizeEventTitleForMatch(value: string) {
     .trim();
 }
 
-function normalizeEventTitle(value: string) {
-  return normalizeEventTitleForMatch(value);
-}
-
 function diceCoefficient(left: string, right: string) {
   if (left === right) return 1;
   if (left.length < 2 || right.length < 2) return 0;
@@ -48,19 +44,9 @@ function tokenDiceCoefficient(left: string, right: string) {
   return (2 * overlap) / (leftTokens.size + rightTokens.size);
 }
 
-const TITLE_SEARCH_STOP_WORDS = new Set(["summer", "live", "dream", "special", "tour", "final", "day1", "day2"]);
-
-/** 从标题取 ilike 用的短关键词（如 ThanXX），引号/破折号写法不同也能命中。 */
-export function extractDistinctiveTitleNeedle(title: string) {
-  const words = normalizeEventTitleForMatch(title)
-    .split(" ")
-    .filter((word) => word.length >= 4 && !/^\d{4}$/.test(word) && !TITLE_SEARCH_STOP_WORDS.has(word));
-  return words.at(-1) ?? null;
-}
-
 export function scoreEventTitleMatch(query: string, candidate: string) {
-  const normalizedQuery = normalizeEventTitle(query);
-  const normalizedCandidate = normalizeEventTitle(candidate);
+  const normalizedQuery = normalizeEventTitleForMatch(query);
+  const normalizedCandidate = normalizeEventTitleForMatch(candidate);
 
   if (!normalizedQuery || !normalizedCandidate) {
     return 0;

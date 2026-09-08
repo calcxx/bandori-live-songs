@@ -46,8 +46,33 @@ function hasCompatibleSeriesYears(left: string, right: string) {
   );
 }
 
+function trimUnclosedJapaneseQuote(prefix: string) {
+  const quotePairs = [
+    ["「", "」"],
+    ["『", "』"],
+  ] as const;
+  let boundaryIndex = prefix.length;
+
+  for (const [openingQuote, closingQuote] of quotePairs) {
+    const openingIndex = prefix.lastIndexOf(openingQuote);
+    const closingIndex = prefix.lastIndexOf(closingQuote);
+    if (openingIndex > closingIndex) {
+      boundaryIndex = Math.min(boundaryIndex, openingIndex);
+    }
+  }
+
+  return prefix.slice(0, boundaryIndex).trimEnd();
+}
+
 function trimPrefixToBoundary(prefix: string) {
-  const cleanedPrefix = prefix.trimEnd();
+  const whitespaceTrimmedPrefix = prefix.trimEnd();
+  const cleanedPrefix = trimUnclosedJapaneseQuote(whitespaceTrimmedPrefix);
+  if (cleanedPrefix !== whitespaceTrimmedPrefix) {
+    return cleanedPrefix
+      .replace(/[\s\-–—~〜～@＠:：·・|/]+$/gu, "")
+      .trim();
+  }
+
   const trailingCharacter = Array.from(cleanedPrefix).at(-1) ?? "";
   if (trailingCharacter && !/[A-Za-z0-9]/u.test(trailingCharacter)) {
     return cleanedPrefix
@@ -55,9 +80,16 @@ function trimPrefixToBoundary(prefix: string) {
       .trim();
   }
 
-  const boundaries = [" ", "@", "＠", "【", "[", "（", "("];
+  const boundariesBeforeSuffix = [" ", "@", "＠", "【", "[", "（", "("];
+  const boundariesAfterPrefix = ["」", "』", "】", "]", "）", ")"];
   const boundaryIndex = Math.max(
-    ...boundaries.map((boundary) => cleanedPrefix.lastIndexOf(boundary)),
+    ...boundariesBeforeSuffix.map((boundary) =>
+      cleanedPrefix.lastIndexOf(boundary),
+    ),
+    ...boundariesAfterPrefix.map((boundary) => {
+      const index = cleanedPrefix.lastIndexOf(boundary);
+      return index < 0 ? index : index + boundary.length;
+    }),
   );
   if (boundaryIndex < 0) {
     return "";
@@ -128,6 +160,7 @@ export function detectLiveSetlistSeries(
     normalizedTitle: normalizeSeriesTitle(candidate.title),
   }));
   const normalizedCurrent = normalizeSeriesTitle(current.title);
+
   const possiblePrefixes = new Set<string>();
 
   for (const candidate of normalizedCandidates) {

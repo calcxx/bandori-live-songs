@@ -51,11 +51,12 @@ Setlist。只有已收录 Setlist 的活动才会计入「听过」，听歌覆�
 
 ## 快速开始
 
-需要 Node.js 20+ 与 PostgreSQL：
+需要 Node.js 22（至少 22.13；版本提示见 `.nvmrc`）与 PostgreSQL：
 
 ```bash
+nvm use
 cp .env.example .env.local
-npm install
+npm ci
 npm run db:migrate
 npm run db:seed
 npm run dev
@@ -78,23 +79,23 @@ npm run dev
 常用检查：
 
 ```bash
-npm run lint
-npm run typecheck
-npm run test
+npm run check
 npm run build
+npm run test:e2e
 ```
 
 ## 你也许感兴趣的项目
 
-### Eventernote 相关
+### Eventernote
 
-- [Eventernote 年度总结](https://receipt.gyuni.space/)
+- [Eventernote Receipt](https://receipt.gyuni.space/)
 - [Eventernote Analyzer](https://en-analyzer.2ak1.com/)
 
-### BanG Dream! 相关
+### BanG Dream!
 
-- [日本 live 远征攻略导航](https://genchi.top/)
+- [现地攻略导航](https://genchi.top/)
 - [邦多利资料库](https://bandori.fans/)
+
 
 ## 许可证
 

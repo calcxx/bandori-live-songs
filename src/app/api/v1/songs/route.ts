@@ -1,4 +1,4 @@
-import { getPublicApiSnapshot } from "@/lib/public-api/data";
+import { getPublicApiCatalog } from "@/lib/public-api/data";
 import {
   buildNextLink,
   parseBoundedQuery,
@@ -50,7 +50,6 @@ function compareSongs(
 async function handle(request: Request) {
   try {
     const url = new URL(request.url);
-    const snapshot = await getPublicApiSnapshot();
     const limit = parseLimit(url.searchParams.get("limit"));
     const query = parseBoundedQuery(url.searchParams.get("q"), "q");
     const category = url.searchParams.get("category") ?? "";
@@ -67,12 +66,6 @@ async function handle(request: Request) {
         "category must be original, cover, or project-common.",
       );
     }
-    if (band && !snapshot.bands.some((item) => item.slug === band)) {
-      throw new PublicApiParameterError(
-        "invalid_band",
-        `No band exists with slug "${band}".`,
-      );
-    }
     if (!["id", "releaseDate", "title"].includes(sortValue)) {
       throw new PublicApiParameterError(
         "invalid_sort",
@@ -86,8 +79,16 @@ async function handle(request: Request) {
       );
     }
 
+    const catalog = await getPublicApiCatalog();
+    if (band && !catalog.bands.some((item) => item.slug === band)) {
+      throw new PublicApiParameterError(
+        "invalid_band",
+        `No band exists with slug "${band}".`,
+      );
+    }
+
     const normalizedQuery = query.toLocaleLowerCase();
-    const filtered = snapshot.songs
+    const filtered = catalog.songs
       .filter(
         (song) =>
           (!category || song.category === category) &&

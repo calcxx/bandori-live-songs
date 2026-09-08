@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   fetchAllUserEvents,
+  getEventernoteTotalTimeoutMs,
 } from "@/lib/eventernote/client";
 import {
   parseEventernoteUserEventsPage,
@@ -14,7 +15,7 @@ const samplePage = `
     <div class="gb_users_side_profile clearfix">
       <div class="desc">
         <h2 class="name1">sample_user</h2>
-        <h3 class="name2">Sample User</h3>
+        <h3 class="name2">Example User</h3>
       </div>
     </div>
     <div class="topic"><h1>sample_user/sample_userの参加イベント一覧 (2)</h1></div>
@@ -24,8 +25,8 @@ const samplePage = `
         <p class="day6">2026-02-28 (<span class="wday6">土</span>)</p>
       </div>
       <div class="event">
-        <h4><a href="/events/100001">BanG Dream! 10th Anniversary LIVE</a></h4>
-        <div class="place">会場: <a href="/places/13671">Kアリーナ横浜</a></div>
+        <h4><a href="/events/101">Bandori Test Live</a></h4>
+        <div class="place">会場: <a href="/places/10">Test Venue</a></div>
         <div class="actor">
           <ul>
             <li><a href="/actors/Poppin%27Party/14234">Poppin'Party</a></li>
@@ -39,7 +40,7 @@ const samplePage = `
         <p class="day0">2026-03-10 (<span class="wday0">日</span>)</p>
       </div>
       <div class="event">
-        <h4><a href="/events/100004">Other Franchise Live</a></h4>
+        <h4><a href="/events/102">Other Test Live</a></h4>
         <div class="place">会場: <a href="/places/8">Somewhere</a></div>
         <div class="actor">
           <ul>
@@ -96,7 +97,7 @@ function buildUserEventsPage(options: {
         <div class="gb_users_side_profile clearfix">
           <div class="desc">
             <h2 class="name1">sample_user</h2>
-            <h3 class="name2">Sample User</h3>
+            <h3 class="name2">Example User</h3>
           </div>
         </div>
         <h2 class="gb_subtitle">sample_userさんの参加イベント一覧(${totalCount}件)</h2>
@@ -132,25 +133,25 @@ describe("parseEventernoteUserEventsPage", () => {
     expect(parsed.totalCount).toBe(2);
     expect(parsed.nextPage).toBe(2);
     expect(parsed.displayId).toBe("sample_user");
-    expect(parsed.displayName).toBe("Sample User");
+    expect(parsed.displayName).toBe("Example User");
     expect(parsed.events).toEqual([
       {
-        eventernoteEventId: 100001,
-        title: "BanG Dream! 10th Anniversary LIVE",
+        eventernoteEventId: 101,
+        title: "Bandori Test Live",
         eventDate: "2026-02-28",
-        venue: "Kアリーナ横浜",
+        venue: "Test Venue",
         actorIds: [14234, 24401],
         actorNames: ["Poppin'Party", "Roselia"],
-        sourceUrl: "https://www.eventernote.com/events/100001",
+        sourceUrl: "https://www.eventernote.com/events/101",
       },
       {
-        eventernoteEventId: 100004,
-        title: "Other Franchise Live",
+        eventernoteEventId: 102,
+        title: "Other Test Live",
         eventDate: "2026-03-10",
         venue: "Somewhere",
         actorIds: [1],
         actorNames: ["Other"],
-        sourceUrl: "https://www.eventernote.com/events/100004",
+        sourceUrl: "https://www.eventernote.com/events/102",
       },
     ]);
   });
@@ -185,14 +186,14 @@ describe("parseEventernoteUserEventsPage", () => {
       <div class="event_info clearfix">
         <div class="date"><p>2025-06-14</p></div>
         <div class="event">
-          <h4><a href="/events/413398">RAISE A SUILEN LIVE</a></h4>
-          <div class="place">会場: <a href="/places/1">有明アリーナ</a></div>
+          <h4><a href="/events/201">Bandori Test Live</a></h4>
+          <div class="place">会場: <a href="/places/1">Test Venue A</a></div>
           <div class="actor">
             <a href="/actors/RAISE%20A%20SUILEN/39397">RAISE A SUILEN</a>
             <a href="/actors/%E5%A4%A2%E9%99%90%E5%A4%A7%E3%81%BF%E3%82%85%E3%83%BC%E3%81%9F%E3%81%84%E3%81%B7/75117">夢限大みゅーたいぷ</a>
           </div>
           <div class="event">
-            <h4><a href="/events/396309">Liella! Live</a></h4>
+            <h4><a href="/events/202">Nested Other Live</a></h4>
             <div class="actor"><a href="/actors/Liella%21/59030">Liella!</a></div>
           </div>
         </div>
@@ -200,15 +201,15 @@ describe("parseEventernoteUserEventsPage", () => {
       <div class="event_info clearfix">
         <div class="date"><p>2025-06-13</p></div>
         <div class="event">
-          <h4><a href="/events/396309">Liella! Live</a></h4>
-          <div class="place">会場: <a href="/places/5">大阪城ホール</a></div>
+          <h4><a href="/events/202">Nested Other Live</a></h4>
+          <div class="place">会場: <a href="/places/5">Test Venue B</a></div>
           <div class="actor"><a href="/actors/Liella%21/59030">Liella!</a></div>
         </div>
       </div>
     `;
 
     const parsed = parseEventernoteUserEventsPage(nestedPage);
-    expect(parsed.events.find((event) => event.eventernoteEventId === 396309)?.actorIds).toEqual([59030]);
+    expect(parsed.events.find((event) => event.eventernoteEventId === 202)?.actorIds).toEqual([59030]);
   });
 
   it("ignores duplicated nested event blocks outside the primary event list", () => {
@@ -219,24 +220,24 @@ describe("parseEventernoteUserEventsPage", () => {
           <li class="clearfix past">
             <div class="date"><p>2025-08-16</p></div>
             <div class="event">
-              <h4><a href="/events/422619">SUMMER SONIC 2025 東京会場 1日目</a></h4>
-              <div class="place">会場: <a href="/places/1">ZOZOマリンスタジアム</a></div>
+              <h4><a href="/events/301">Fixture Festival Day 1</a></h4>
+              <div class="place">会場: <a href="/places/1">Test Venue A</a></div>
               <div class="actor"><a href="/actors/Other/1">Other</a></div>
             </div>
           </li>
           <li class="clearfix past">
             <div class="date"><p>2025-08-17</p></div>
             <div class="event">
-              <h4><a href="/events/425156">DAY3：U-NEXT MUSIC FES LoveLive! Series EXPO STAGE ～Right now!～</a></h4>
-              <div class="place">会場: <a href="/places/2">Kアリーナ横浜</a></div>
+              <h4><a href="/events/302">Fixture Festival Day 2</a></h4>
+              <div class="place">会場: <a href="/places/2">Test Venue B</a></div>
               <div class="actor"><a href="/actors/Other/2">Other 2</a></div>
             </div>
           </li>
           <li class="clearfix past">
             <div class="date"><p>2025-08-18</p></div>
             <div class="event">
-              <h4><a href="/events/433452">【出演者変更】ラブライブ！スーパースター!! Liella! Special LoveLive! ～Connect the Stars～</a></h4>
-              <div class="place">会場: <a href="/places/3">大阪城ホール</a></div>
+              <h4><a href="/events/303">Fixture Festival Day 3</a></h4>
+              <div class="place">会場: <a href="/places/3">Test Venue C</a></div>
               <div class="actor"><a href="/actors/Liella%21/59030">Liella!</a></div>
             </div>
           </li>
@@ -246,14 +247,14 @@ describe("parseEventernoteUserEventsPage", () => {
         <div class="event_info clearfix">
           <div class="date"><p>2025-08-17</p></div>
           <div class="event">
-            <h4><a href="/events/425156">DAY3：U-NEXT MUSIC FES LoveLive! Series EXPO STAGE ～Right now!～</a></h4>
+            <h4><a href="/events/302">Fixture Festival Day 2</a></h4>
             <div class="actor"><a href="/actors/Other/2">Other 2</a></div>
           </div>
         </div>
         <div class="event_info clearfix">
           <div class="date"><p>2025-08-18</p></div>
           <div class="event">
-            <h4><a href="/events/433452">【出演者変更】ラブライブ！スーパースター!! Liella! Special LoveLive! ～Connect the Stars～</a></h4>
+            <h4><a href="/events/303">Fixture Festival Day 3</a></h4>
             <div class="actor"><a href="/actors/Liella%21/59030">Liella!</a></div>
           </div>
         </div>
@@ -263,14 +264,14 @@ describe("parseEventernoteUserEventsPage", () => {
     const parsed = parseEventernoteUserEventsPage(duplicateBlockPage);
 
     expect(parsed.pageItemCount).toBe(3);
-    expect(parsed.events.map((event) => event.eventernoteEventId)).toEqual([422619, 425156, 433452]);
+    expect(parsed.events.map((event) => event.eventernoteEventId)).toEqual([301, 302, 303]);
   });
 
   it("extracts display_id and nickname from the profile block", () => {
     expect(parseEventernoteUserProfilePage(samplePage)).toEqual({
       missingUser: false,
       displayId: "sample_user",
-      displayName: "Sample User",
+      displayName: "Example User",
     });
   });
 });
@@ -396,7 +397,7 @@ describe("fetchAllUserEvents", () => {
           <div class="gb_users_side_profile clearfix">
             <div class="desc">
               <h2 class="name1">sample_user</h2>
-              <h3 class="name2">Sample User</h3>
+              <h3 class="name2">Example User</h3>
             </div>
           </div>
           <h2 class="gb_subtitle">sample_userさんの参加イベント一覧(3件)</h2>
@@ -455,5 +456,20 @@ describe("fetchAllUserEvents", () => {
 
     expect(result.events.map((event) => event.eventernoteEventId)).toEqual([500001, 500002]);
     expect(result.totalCount).toBe(3);
+  });
+});
+
+describe("getEventernoteTotalTimeoutMs", () => {
+  it("keeps the existing budget for small users", () => {
+    expect(getEventernoteTotalTimeoutMs(1)).toBe(30000);
+  });
+
+  it("scales the budget with pagination batches", () => {
+    expect(getEventernoteTotalTimeoutMs(10)).toBe(45000);
+    expect(getEventernoteTotalTimeoutMs(32)).toBe(95000);
+  });
+
+  it("caps the budget for unusually large users", () => {
+    expect(getEventernoteTotalTimeoutMs(100)).toBe(120000);
   });
 });

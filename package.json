@@ -6,8 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint .",
-    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings 0",
+    "typecheck": "next typegen && tsc --noEmit",
+    "check": "npm run lint && npm run typecheck && npm run test",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
@@ -23,7 +24,7 @@
     "data:backfill:eventernote-users": "tsx scripts/backfill-eventernote-user-profiles.ts",
     "data:cleanup:event-titles": "tsx scripts/cleanup-event-title-tags.ts",
     "data:cleanup:song-references": "tsx scripts/cleanup-song-references.ts",
-    "data:import:songs": "tsx scripts/import-discography.ts",
+    "data:import:songs": "tsx scripts/import-song-seed.ts",
     "db:seed": "tsx scripts/seed-all.ts"
   },
   "dependencies": {
@@ -31,7 +32,7 @@
     "drizzle-orm": "^0.45.2",
     "html-to-image": "^1.11.13",
     "lucide-react": "^0.547.0",
-    "next": "16.2.4",
+    "next": "16.3.4",
     "postgres": "^3.4.7",
     "react": "19.2.4",
     "react-dom": "19.2.4",
@@ -39,18 +40,22 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@playwright/test": "^1.55.0",
+    "@next/env": "16.3.4",
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
+    "@types/node": "^22.20.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@vitest/coverage-v8": "^4.0.7",
+    "@vitest/coverage-v8": "^4.1.11",
     "drizzle-kit": "^0.31.10",
     "eslint": "^9",
-    "eslint-config-next": "16.2.4",
+    "eslint-config-next": "16.3.4",
     "tailwindcss": "^4",
     "tsx": "^4.20.6",
     "typescript": "^5",
-    "vitest": "^4.0.7"
+    "vitest": "^4.1.11"
+  },
+  "engines": {
+    "node": "^22.13.0"
   }
 }

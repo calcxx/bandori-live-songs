@@ -1,4 +1,4 @@
-import { getPublicApiSnapshot } from "@/lib/public-api/data";
+import { getPublicApiCatalog } from "@/lib/public-api/data";
 import {
   publicApiInvalidParameterResponse,
   publicApiJsonResponse,
@@ -15,8 +15,8 @@ type Context = {
 async function handle(request: Request, context: Context) {
   try {
     const { slug } = await context.params;
-    const snapshot = await getPublicApiSnapshot();
-    const band = snapshot.bands.find((item) => item.slug === slug);
+    const catalog = await getPublicApiCatalog();
+    const band = catalog.bands.find((item) => item.slug === slug);
     if (!band) {
       return publicApiProblemResponse(request, {
         status: 404,

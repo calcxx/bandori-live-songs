@@ -3,7 +3,7 @@ import "server-only";
 import { eq } from "drizzle-orm";
 import { unstable_cache } from "next/cache";
 import { getDb } from "@/lib/db/core";
-import { normalizeSongTitle } from "@/lib/music/title-utils";
+import { createSongLookup } from "@/lib/music/song-lookup";
 import { events, setlistEntries, songs } from "@/lib/db/schema";
 import type { SongEventReference } from "./aggregate";
 
@@ -27,36 +27,13 @@ const getSongEventsBySongIdCached = unstable_cache(
         .innerJoin(events, eq(setlistEntries.eventId, events.id)),
     ]);
 
-    const songIdByTitle = new Map(songRows.map((song) => [song.title, song.id]));
-    const songIdByNormalizedTitle = new Map<string, number | null>();
-
-    for (const song of songRows) {
-      const normalizedTitle = normalizeSongTitle(song.title);
-      const existing = songIdByNormalizedTitle.get(normalizedTitle);
-
-      if (existing === undefined) {
-        songIdByNormalizedTitle.set(normalizedTitle, song.id);
-        continue;
-      }
-
-      if (existing !== song.id) {
-        songIdByNormalizedTitle.set(normalizedTitle, null);
-      }
-    }
+    const songLookup = createSongLookup(songRows);
 
     const songEventsBySongId: SongEventsBySongId = {};
     const dedupedRefs = new Set<string>();
 
     for (const row of setlistRows) {
-      let songId = row.songId ?? songIdByTitle.get(row.rawTitle);
-
-      if (!songId) {
-        const fallbackSongId = songIdByNormalizedTitle.get(normalizeSongTitle(row.rawTitle));
-        if (fallbackSongId) {
-          songId = fallbackSongId;
-        }
-      }
-
+      const songId = row.songId ?? songLookup.matchTitle(row.rawTitle)?.id;
       if (!songId) {
         continue;
       }

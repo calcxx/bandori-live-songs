@@ -9,6 +9,8 @@ const EXCLUSION_PATTERNS = [
   /game size/i,
   /\bmv\b/i,
   /アフタートーク/,
+  /(?:^|[\s([（［【])covers?(?:\s+(?:version|ver\.?)\s*)?(?=$|[\s)\]）］】])/i,
+  /カ(?:バー|ヴァー)/u,
 ];
 
 const VERSION_SUFFIX_PATTERNS = [

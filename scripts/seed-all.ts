@@ -1,11 +1,11 @@
 import { pathToFileURL } from "node:url";
-import { importDiscography } from "./import-discography";
+import { importSongSeed } from "./import-song-seed";
 import { seedBands } from "./seed-bands";
 import { seedVisibilityRules } from "./seed-visibility-rules";
 
 export async function seedAll() {
   await seedBands();
-  await importDiscography();
+  await importSongSeed();
   await seedVisibilityRules();
 }
 

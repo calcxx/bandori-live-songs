@@ -127,17 +127,16 @@ async function fetchActorEventsPage(
     url.searchParams.set("page", String(page));
   }
 
-  const response = await fetchWithTimeout(url, {
+  const html = await fetchWithTimeout(url, {
     headers: buildHeaders(),
     next: { revalidate: 0 },
     timeoutMs: eventernotePageTimeoutMs,
+  }, async (response) => {
+    if (!response.ok) {
+      throw new Error(`Failed to fetch ${url.toString()}: ${response.status}`);
+    }
+    return response.text();
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch ${url.toString()}: ${response.status}`);
-  }
-
-  const html = await response.text();
   return parseEventernoteActorEventsPage(html, sourceBand);
 }
 

@@ -1,3 +1,5 @@
+import { parseSetlistImportEventId } from "@/lib/admin/setlist-import-url";
+import { parseSongFields } from "@/lib/admin/song-fields";
 import { asc, eq } from "drizzle-orm";
 import { revalidatePath, updateTag } from "next/cache";
 import { getAdminAuthStatus } from "@/lib/admin/server-auth";
@@ -5,10 +7,9 @@ import { BAND_SEEDS } from "@/lib/constants/bands";
 import { getDb } from "@/lib/db/core";
 import { bands, events, setlistEntries, songs } from "@/lib/db/schema";
 import { fetchEventMetaFromEventernote, type EventernoteEventMeta } from "@/lib/eventernote/event-meta";
-import { isSongCategory } from "@/lib/music/song-category";
 import { createSongResolver } from "@/lib/music/song-resolution";
 import { canonicalizeSongTitle, stripTrackIndex } from "@/lib/music/title-utils";
-import { refreshSongLiveState } from "@/lib/stats/refresh-song-live-state";
+import { saveEventSetlist } from "@/lib/admin/save-event-setlist";
 import { SetlistImportForm } from "./setlist-import-form";
 import { formatSetlistEntriesText, type SetlistImportActionState } from "./types";
 
@@ -20,32 +21,6 @@ type ParsedSetlistLine = {
 type EventMeta = EventernoteEventMeta;
 
 const overwriteConfirmRequiredMessage = "该活动已有 setlist，请确认后整场替换。";
-
-function parseEventernoteEventId(input: string) {
-  const trimmed = input.trim();
-
-  if (/^\d+$/.test(trimmed)) {
-    const value = Number(trimmed);
-    return Number.isSafeInteger(value) && value > 0 ? value : null;
-  }
-
-  try {
-    const url = new URL(trimmed);
-    if (!url.hostname.endsWith("eventernote.com")) {
-      return null;
-    }
-
-    const match = url.pathname.match(/\/events\/(\d+)/);
-    if (!match) {
-      return null;
-    }
-
-    const value = Number(match[1]);
-    return Number.isSafeInteger(value) && value > 0 ? value : null;
-  } catch {
-    return null;
-  }
-}
 
 function parseSetlistLines(input: string) {
   return input
@@ -82,22 +57,13 @@ async function addMissingSong(
     formData.get(`quickAddReleaseDate:${line.lineNumber}`) ?? "",
   ).trim();
 
-  if (!isSongCategory(categoryValue)) {
-    throw new Error("请选择有效的歌曲分类。");
-  }
-  if (
-    categoryValue === "original" &&
-    !BAND_SEEDS.some(
-      (band) => band.groupType === "band" && band.slug === bandSlug,
-    )
-  ) {
-    throw new Error("原创曲必须选择有效的乐队。");
-  }
-  if (
-    categoryValue === "original" &&
-    !/^\d{4}-\d{2}-\d{2}$/u.test(releaseDate)
-  ) {
-    throw new Error("原创曲必须填写有效的发行日期。");
+  const parsedFields = parseSongFields({
+    categoryValue,
+    bandSlug,
+    releaseDate: categoryValue === "original" ? releaseDate : "",
+  });
+  if (!parsedFields.success) {
+    throw new Error(parsedFields.error);
   }
 
   const title = canonicalizeSongTitle(line.rawTitle);
@@ -110,10 +76,7 @@ async function addMissingSong(
     .insert(songs)
     .values({
       title,
-      category: categoryValue,
-      bandSlug: categoryValue === "original" ? bandSlug : null,
-      firstReleaseDate:
-        categoryValue === "original" ? releaseDate : null,
+      ...parsedFields.data,
     })
     .onConflictDoNothing({ target: songs.title });
   updateTag("song-catalog");
@@ -223,7 +186,7 @@ async function submitSetlistImport(
   const quickAddLineNumber = parseQuickAddLineNumber(
     String(formData.get("intent") ?? ""),
   );
-  const eventernoteEventId = parseEventernoteEventId(eventInput);
+  const eventernoteEventId = parseSetlistImportEventId(eventInput);
 
   if (!eventernoteEventId) {
     return {
@@ -312,61 +275,13 @@ async function submitSetlistImport(
   }
 
   const db = getDb();
-  const saved = await db.transaction(async (tx) => {
-    if (existingEvent) {
-      await tx
-        .update(events)
-        .set({
-          title: eventMeta.title,
-          eventDate: eventMeta.eventDate,
-          venue: eventMeta.venue,
-          setlistStatus: "complete",
-          updatedAt: new Date(),
-        })
-        .where(eq(events.id, existingEvent.id));
-
-      await tx.delete(setlistEntries).where(eq(setlistEntries.eventId, existingEvent.id));
-
-      await tx.insert(setlistEntries).values(
-        resolved.map((line, index) => ({
-          eventId: existingEvent.id,
-          orderIndex: index + 1,
-          rawTitle: line.rawTitle,
-          songId: line.songId,
-        })),
-      );
-
-      return { id: existingEvent.id, overwritten: true as const };
-    }
-
-    const [eventRecord] = await tx
-      .insert(events)
-      .values({
-        eventernoteEventId,
-        title: eventMeta.title,
-        eventDate: eventMeta.eventDate,
-        venue: eventMeta.venue,
-        setlistStatus: "complete",
-      })
-      .onConflictDoNothing({
-        target: events.eventernoteEventId,
-      })
-      .returning({ id: events.id });
-
-    if (!eventRecord) {
-      return null;
-    }
-
-    await tx.insert(setlistEntries).values(
-      resolved.map((line, index) => ({
-        eventId: eventRecord.id,
-        orderIndex: index + 1,
-        rawTitle: line.rawTitle,
-        songId: line.songId,
-      })),
-    );
-
-    return { id: eventRecord.id, overwritten: false as const };
+  const saved = await saveEventSetlist(db, {
+    eventernoteEventId,
+    existingEventId: existingEvent?.id ?? null,
+    title: eventMeta.title,
+    eventDate: eventMeta.eventDate,
+    venue: eventMeta.venue,
+    entries: resolved,
   });
 
   if (!saved) {
@@ -381,11 +296,9 @@ async function submitSetlistImport(
     };
   }
 
-  await refreshSongLiveState(db);
   updateTag("song-catalog");
   updateTag("open-api-v1");
   updateTag("song-events");
-  updateTag("sitemap-events");
   revalidatePath("/sitemap.xml");
 
   return {
@@ -414,7 +327,7 @@ type SetlistImportPageProps = {
 export default async function SetlistImportPage({ searchParams }: SetlistImportPageProps) {
   const { event = "", eventInput = "" } = await searchParams;
   const queryEventInput = eventInput.trim() || event.trim();
-  const parsedEventId = parseEventernoteEventId(queryEventInput);
+  const parsedEventId = parseSetlistImportEventId(queryEventInput);
   const defaultEventInput = parsedEventId ? queryEventInput : "";
 
   let defaultSetlistText = "";

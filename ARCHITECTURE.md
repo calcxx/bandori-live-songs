@@ -42,7 +42,7 @@ bdr-events-to-songs/
 ├── scripts/                    # 离线数据管理脚本
 ├── tests/                      # 单元测试
 ├── drizzle.config.ts           # Drizzle ORM 配置
-└── vitest.config.ts            # Vitest 配置
+└── vitest.config.mts           # Vitest 配置
 ```
 
 ## 4. 架构分层图
@@ -171,6 +171,7 @@ app/
 ```
 components/
 ├── home-page-client.tsx              # 首页客户端壳 — 状态管理、表单、结果展示
+├── home/                              # 首页请求复用与用户统计会话缓存
 ├── results-client.tsx                # 结果展示主组件 — 组合布局
 ├── results/
 │   ├── use-results-state.ts          # 结果页状态管理 Hook
@@ -201,17 +202,23 @@ components/
 
 ```
 stats/
-├── get-user-song-stats.ts       # 主入口：用户歌曲统计编排
+├── get-user-song-stats.ts       # 缓存策略分支、查询和结果组装
 ├── catalog-cache.ts             # 曲目库缓存 (unstable_cache)
 ├── build-matched-events.ts      # 活动 × 乐队 × Setlist 匹配
 ├── aggregate.ts                 # 前端聚合逻辑 (纯函数)
 ├── eventernote-cache-policy.ts  # 缓存策略：活动数比对 / 日龄静默刷新 / 租约
+├── user-events-cache-store.ts   # 缓存写入、失败恢复和数据库租约
+├── user-events-refresh.ts       # 上游抓取、进程内去重和后台刷新
 ├── song-events-cache.ts         # 歌曲关联活动缓存
 ├── song-performance-stats.ts    # 完整曲库演出次数统计与搜索数据
 └── refresh-song-live-state.ts   # 刷新歌曲现场演出状态
 ```
 
-**`get-user-song-stats.ts`** 是整个应用的核心编排函数，职责：
+**`get-user-song-stats.ts`** 是统计入口；用户活动刷新与持久化分别由
+`user-events-refresh.ts` 和 `user-events-cache-store.ts` 协调。数据库租约与进程内请求去重
+构成两层独立保护，成功结果统一由入口组装。
+
+核心职责：
 
 1. 并行获取曲目库和用户缓存
 2. 判断缓存状态（缺失 / 远程活动数变化 / 距上次抓取超 1 天 / 解析器版本过旧 / 手动刷新）
@@ -231,6 +238,8 @@ stats/
 - **解析器版本**（`parserVersion`）升级时：同步全量刷新。
 - **用户手动刷新**（`?refresh=1` 或 `awaitFreshAfter`）：按 inline/background 模式强制刷新。
 - 使用数据库行级租约（`refreshingStartedAt`，5 分钟）与进程内去重，防止同一用户并发全量抓取。
+- 完整活动抓取根据第一页解析出的总页数动态放宽总超时：单页仍限制为 10 秒，整次最多 120 秒；
+  用户页面的函数执行上限为 180 秒，为大活动量用户的缓存写入留出余量。
 
 #### 6.3.2 `eventernote/` — Eventernote 爬虫
 
@@ -257,20 +266,15 @@ eventIds ∩ index → bandori-user-events.ts（未命中丢弃；不用列表�
 ```
 
 - `parser.ts`：纯函数，接收 HTML 字符串，返回结构化数据。与 I/O 完全解耦，便于单元测试
-- `client.ts`：负责 HTTP 请求、分页调度、指数退避重试（最多 3 次）、超时控制（单页 10s / 总计 30s）
+- `client.ts`：负责 HTTP 请求、分页调度、指数退避重试（最多 3 次）和按页数动态调整的总超时
 - `bandori-user-events.ts`：用 `bandori_event_index`（演员页权威）按 eventId 匹配乐队；用户列表页的 `actorIds` 不参与匹配（规避 Eventernote 列表错位）
 - `bandori-event-index.ts` / cron：抓取各乐队演员页并 upsert 索引；admin 页直接按日期筛选查询该表
 
-#### 6.3.3 `bandori/` — 曲目库
+#### 6.3.3 `bandori/` — BanG Dream! 领域逻辑
 
-```
-bandori/
-└── discography-catalog.ts   # 内置曲目库 JSON 加载与校验
-```
-
-- `discography-catalog.ts` 加载 `src/data/discography-catalog.json`，用 Zod 校验结构
+- 曲目种子由 `music/song-seed.ts` 加载 `src/data/song-seed.json`，并用 Zod 校验结构
 - 曲目标题标准化通过 `music/title-utils.ts` 完成（NFKC 归一化、去除翻唱标记等）
-- 原创曲由内置目录与 MusicBrainz 维护；翻唱曲和企划共通歌曲通过 `/admin/songs-import` 维护
+- 原创曲由歌曲种子与 MusicBrainz 维护；翻唱曲和企划共通歌曲通过 `/admin/songs-import` 维护
 - `songs.category` 区分 `original`、`cover` 和 `project-common`
 
 #### 6.3.4 `music/` — 歌曲工具
@@ -279,6 +283,8 @@ bandori/
 music/
 ├── sort.ts                  # 排序比较器 (compareSongsByReleaseDate 等)
 ├── title-utils.ts           # 标题规范化、归一化、去重
+├── song-lookup.ts           # 精确标题优先、唯一规范化标题回退的共享索引
+├── song-seed.ts             # 歌曲种子 JSON 加载与校验
 ├── song-category.ts         # 歌曲分类类型
 ├── song-resolution.ts       # Setlist 歌曲唯一解析
 ├── setlist-text.ts          # Setlist 文本处理
@@ -393,7 +399,7 @@ erDiagram
 
 ```
 data/
-├── discography-catalog.json         # 空曲库导入模板
+├── song-seed.json                   # 空歌曲种子模板
 └── event-visibility-rules.json      # 空活动规则模板
 ```
 
@@ -407,7 +413,7 @@ data/
 scripts/
 ├── seed-bands.ts                          # 初始化乐队数据和通用搜索别名
 ├── seed-all.ts                            # 全量数据初始化
-├── import-discography.ts                  # 从内置 JSON 导入曲目
+├── import-song-seed.ts                    # 从歌曲种子 JSON 导入曲目
 ├── refresh-event-ranking.ts               # 刷新 bandori_event_index（演员页全量）
 ├── refresh-event-recent.ts                # 同上入口（兼容旧脚本名）
 ├── backfill-event-meta.ts                 # 回填活动元数据
@@ -477,6 +483,13 @@ graph LR
     L2 --> Dedup
 ```
 
+- 歌曲索引由 `src/lib/music/song-lookup.ts` 统一提供：精确标题优先，规范化标题仅在唯一对应时匹配。
+- Setlist 导入在一个数据库事务内替换活动与曲目，并刷新歌曲的
+  `has_been_played_live` 状态；事务成功后再失效曲库、歌曲场次和开放 API 缓存。
+- 开放 API 的乐队/歌曲端点只读取共享目录缓存；活动及歌曲场次端点才组装完整活动快照。
+- cron 使用 `revalidateTag(tag, { expire: 0 })`，后台 Server Actions 使用 `updateTag`；
+  MusicBrainz 仅在实际写入后触发缓存失效。
+
 ### 8.3 Parser 与 I/O 分离
 
 `eventernote/parser.ts` 是纯函数模块，只接收 HTML 字符串，返回结构化数据。这使得：
@@ -484,6 +497,11 @@ graph LR
 - 单元测试只需传入 HTML 片段，无需 mock HTTP
 - `client.ts` 专注于 HTTP 逻辑（分页、重试、超时）
 - 解析器升级时只需 bump `parserVersion`，触发缓存自动刷新
+
+日期字段统一通过 `src/lib/calendar-date.ts` 做真实日历校验；后台歌曲表单字段集中由
+`src/lib/admin/song-fields.ts` 校验，歌单导入的 URL/ID 解析集中在
+`src/lib/admin/setlist-import-url.ts`。外部 HTML 抓取通过
+`src/lib/http/fetch-with-timeout.ts` 在同一截止时间内完成请求和正文读取。
 
 ### 8.4 类型安全贯穿全链路
 
@@ -494,10 +512,10 @@ graph LR
 
 ## 9. 数据导入流程
 
-曲目库通过 `db:seed` 从内置 JSON 导入；运行时由 `catalog-cache.ts` 从数据库加载。
+曲目库通过 `db:seed` 从歌曲种子 JSON 导入；运行时由 `catalog-cache.ts` 从数据库加载。
 
 ```bash
-npm run db:seed                    # 初始化乐队 + 导入 discography-catalog.json
+npm run db:seed                    # 初始化乐队 + 导入 song-seed.json
 npm run data:import:songs          # 仅重新导入曲目（可选）
 ```
 

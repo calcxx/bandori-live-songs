@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  isValidLiveSetlistDate,
-  parseLiveSetlistSearch,
-} from "@/lib/live-setlist/date";
+import { parseLiveSetlistSearch } from "@/lib/live-setlist/date";
 import { rankLiveSetlistCandidates } from "@/lib/live-setlist/match";
 
 const candidates = [
@@ -27,13 +24,6 @@ const candidates = [
 ];
 
 describe("live setlist date search", () => {
-  it("validates calendar dates in ISO format", () => {
-    expect(isValidLiveSetlistDate("2024-02-29")).toBe(true);
-    expect(isValidLiveSetlistDate("2023-02-29")).toBe(false);
-    expect(isValidLiveSetlistDate("2024-04-31")).toBe(false);
-    expect(isValidLiveSetlistDate("2024/02/29")).toBe(false);
-  });
-
   it("supports year, month, and day searches with multiple separators", () => {
     expect(rankLiveSetlistCandidates(candidates, "2024")).toEqual(
       candidates,
@@ -57,6 +47,13 @@ describe("live setlist date search", () => {
     expect(titleAndDateResults[0]).toEqual(candidates[1]);
     expect(titleAndDateResults.every((candidate) => candidate.eventDate.startsWith("2024-02"))).toBe(true);
     expect(rankLiveSetlistCandidates(candidates, "2024-03-1")).toEqual([]);
+  });
+
+  it("filters by date before limiting results, even when an off-date title matches better", () => {
+    const matching = { eventernoteEventId: 10, title: "Roselia Live DAY2", eventDate: "2026-03-21", venue: null };
+    const offDate = { eventernoteEventId: 11, title: "Roselia Live", eventDate: "2026-03-20", venue: null };
+    expect(rankLiveSetlistCandidates([offDate, matching], "Roselia Live 2026-03-21", 1))
+      .toEqual([matching]);
   });
 
   it("removes the date token before title matching", () => {

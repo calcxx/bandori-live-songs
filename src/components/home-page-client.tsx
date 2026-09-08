@@ -1,6 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { readUserStatsCache, writeUserStatsCache } from "./home/user-stats-cache";
+import {
+  loadLiveSetlistDetail,
+  loadRecentLiveSetlists,
+  loadOnThisDayLiveSetlists,
+  loadDefaultUserStats,
+} from "./home/requests";
 import { Loader2Icon } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -41,9 +48,7 @@ import {
 } from "@/lib/live-setlist/history";
 import type {
   LiveSetlist,
-  LiveSetlistResponse,
   RecentLiveSetlist,
-  RecentLiveSetlistsResponse,
 } from "@/lib/live-setlist/types";
 import {
   buildEmptyEventSearchHref,
@@ -74,159 +79,6 @@ type HomePageClientProps = {
 
 const refreshParamNames = ["refresh", "awaitFreshAfter"];
 type SearchMode = "user" | "live";
-
-type UserStatsOkResult = Extract<UserSongStatsResult, { state: "ok" }>;
-
-// Session-level cache of successfully loaded user stats. The in-memory
-// map is mirrored to sessionStorage so it also survives full page loads
-// (e.g. following an event link) within the same browser tab, letting
-// already loaded user pages render instantly on return while the server
-// navigation revalidates.
-const userStatsStorageKey = "bdr-user-stats-cache-v1";
-const userStatsOkCache = new Map<string, UserStatsOkResult>();
-const userStatsCacheLimit = 5;
-let userStatsCacheHydrated = false;
-const liveSetlistDetailCache = new Map<number, Promise<LiveSetlist>>();
-let recentLiveSetlistsRequest: Promise<RecentLiveSetlist[]> | null = null;
-let onThisDayLiveSetlistsRequest: Promise<RecentLiveSetlist[]> | null = null;
-
-function loadLiveSetlistDetail(eventernoteEventId: number) {
-  const cached = liveSetlistDetailCache.get(eventernoteEventId);
-  if (cached) {
-    return cached;
-  }
-
-  const request = fetch(
-    `/api/live-setlists?eventernoteEventId=${eventernoteEventId}`,
-  )
-    .then(async (response) => {
-      if (!response.ok) {
-        throw new Error(`Live setlist request failed: ${response.status}`);
-      }
-      const data = (await response.json()) as LiveSetlistResponse;
-      return data.live;
-    })
-    .catch((error) => {
-      liveSetlistDetailCache.delete(eventernoteEventId);
-      throw error;
-    });
-
-  liveSetlistDetailCache.set(eventernoteEventId, request);
-  return request;
-}
-
-function loadRecentLiveSetlists() {
-  if (recentLiveSetlistsRequest) {
-    return recentLiveSetlistsRequest;
-  }
-
-  recentLiveSetlistsRequest = fetch("/api/live-setlists?recent=1")
-    .then(async (response) => {
-      if (!response.ok) {
-        throw new Error(`Recent live setlists request failed: ${response.status}`);
-      }
-      const data = (await response.json()) as RecentLiveSetlistsResponse;
-      return data.events;
-    })
-    .catch((error) => {
-      recentLiveSetlistsRequest = null;
-      throw error;
-    });
-
-  return recentLiveSetlistsRequest;
-}
-
-function loadOnThisDayLiveSetlists() {
-  if (onThisDayLiveSetlistsRequest) {
-    return onThisDayLiveSetlistsRequest;
-  }
-
-  onThisDayLiveSetlistsRequest = fetch("/api/live-setlists?onThisDay=1")
-    .then(async (response) => {
-      if (!response.ok) {
-        throw new Error(
-          `On-this-day live setlists request failed: ${response.status}`,
-        );
-      }
-      const data = (await response.json()) as RecentLiveSetlistsResponse;
-      return data.events;
-    })
-    .catch((error) => {
-      onThisDayLiveSetlistsRequest = null;
-      throw error;
-    });
-
-  return onThisDayLiveSetlistsRequest;
-}
-
-function isCachedUserStats(value: unknown): value is UserStatsOkResult {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-  const candidate = value as Partial<UserStatsOkResult>;
-  return (
-    candidate.state === "ok" &&
-    typeof candidate.userId === "string" &&
-    Array.isArray(candidate.songs) &&
-    Array.isArray(candidate.matchedEvents)
-  );
-}
-
-function hydrateUserStatsCache() {
-  if (userStatsCacheHydrated || typeof window === "undefined") {
-    return;
-  }
-  userStatsCacheHydrated = true;
-  try {
-    const raw = window.sessionStorage.getItem(userStatsStorageKey);
-    if (!raw) {
-      return;
-    }
-    const parsed: unknown = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") {
-      return;
-    }
-    for (const [key, value] of Object.entries(parsed)) {
-      if (isCachedUserStats(value)) {
-        userStatsOkCache.set(key, value);
-      }
-    }
-  } catch {
-    // Storage may be disabled or contain invalid data.
-  }
-}
-
-function writeUserStatsCache(result: UserStatsOkResult) {
-  const key = normalizeEventernoteUserCacheKey(result.userId);
-  userStatsOkCache.delete(key);
-  userStatsOkCache.set(key, result);
-  while (userStatsOkCache.size > userStatsCacheLimit) {
-    const oldestKey = userStatsOkCache.keys().next().value;
-    if (!oldestKey) {
-      break;
-    }
-    userStatsOkCache.delete(oldestKey);
-  }
-  try {
-    window.sessionStorage.setItem(
-      userStatsStorageKey,
-      JSON.stringify(Object.fromEntries(userStatsOkCache)),
-    );
-  } catch {
-    // Storage may be disabled by the browser.
-  }
-}
-
-function readUserStatsCache(userId: string) {
-  hydrateUserStatsCache();
-  return userStatsOkCache.get(normalizeEventernoteUserCacheKey(userId)) ?? null;
-}
-
-function loadDefaultUserStats(signal?: AbortSignal) {
-  return fetch("/api/default-user-stats", { signal }).then(
-    (res) => res.json() as Promise<UserSongStatsResult>,
-  );
-}
 
 function getWarmingMessage(copy: CopyDefinition, result: UserSongStatsResult | null) {
   if (result?.state !== "warming") {
@@ -809,14 +661,9 @@ export function HomePageClient({
           {pendingUserTarget === null && !trimmedUserId && displayResult ? (
             <p className="mt-4 text-center text-sm text-ink-soft">
               {localeCopy.demoPrefix}
-              <a
-                href={`https://www.eventernote.com/bd/user/${encodeURIComponent(displayResult.userId)}`}
-                target="_blank"
-                rel="noreferrer"
-                className="font-medium text-foreground transition hover:text-accent"
-              >
+              <span className="font-medium text-foreground">
                 {localeCopy.demoLinkLabel}
-              </a>
+              </span>
               {localeCopy.demoSuffix}
             </p>
           ) : null}

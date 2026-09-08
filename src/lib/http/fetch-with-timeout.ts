@@ -5,9 +5,11 @@ export class FetchTimeoutError extends Error {
   }
 }
 
-export async function fetchWithTimeout(
+/** The deadline includes consuming the response body inside readResponse. */
+export async function fetchWithTimeout<T>(
   input: string | URL,
-  init: RequestInit & { timeoutMs?: number } = {},
+  init: RequestInit & { timeoutMs?: number },
+  readResponse: (response: Response) => Promise<T>,
 ) {
   const { timeoutMs = 8000, signal: upstreamSignal, ...rest } = init;
   const controller = new AbortController();
@@ -28,15 +30,14 @@ export async function fetchWithTimeout(
   }
 
   try {
-    return await fetch(input, {
+    const response = await fetch(input, {
       ...rest,
       signal: controller.signal,
     });
+    return await readResponse(response);
   } catch (error) {
-    if (controller.signal.aborted && (controller.signal.reason instanceof FetchTimeoutError || error instanceof DOMException)) {
-      throw controller.signal.reason instanceof FetchTimeoutError
-        ? controller.signal.reason
-        : new FetchTimeoutError(`Request timed out after ${timeoutMs}ms`);
+    if (controller.signal.aborted) {
+      throw controller.signal.reason;
     }
 
     throw error;

@@ -5,7 +5,7 @@ import { songs } from "@/lib/db/schema";
 import { BAND_SEEDS } from "@/lib/constants/bands";
 import { getAdminAuthStatus } from "@/lib/admin/server-auth";
 import { canonicalizeSongTitle } from "@/lib/music/title-utils";
-import { isSongCategory } from "@/lib/music/song-category";
+import { parseSongFields } from "@/lib/admin/song-fields";
 import { SongsImportForm } from "./songs-import-form";
 import type {
   EditableSong,
@@ -19,36 +19,6 @@ function parseSongLines(input: string) {
     .split(/\r?\n/u)
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
-}
-
-function isValidBandSlug(bandSlug: string) {
-  return BAND_SEEDS.some(
-    (band) => band.groupType === "band" && band.slug === bandSlug,
-  );
-}
-
-function validateSongFields({
-  categoryValue,
-  bandSlug,
-  releaseDate,
-}: {
-  categoryValue: string;
-  bandSlug: string;
-  releaseDate: string;
-}) {
-  if (!isSongCategory(categoryValue)) {
-    return "请选择有效的歌曲分类。";
-  }
-  if (categoryValue === "original" && !isValidBandSlug(bandSlug)) {
-    return "请选择有效的乐队。";
-  }
-  if (
-    (categoryValue === "original" && !releaseDate) ||
-    (releaseDate && !/^\d{4}-\d{2}-\d{2}$/.test(releaseDate))
-  ) {
-    return "日期格式不正确，请使用 YYYY-MM-DD。";
-  }
-  return null;
 }
 
 function refreshSongCaches({ includeSongEvents = false } = {}) {
@@ -78,20 +48,17 @@ async function submitSongsImport(
   const releaseDate = String(formData.get("releaseDate") ?? "").trim();
   const songText = String(formData.get("songText") ?? "");
 
-  const validationError = validateSongFields({
+  const parsedFields = parseSongFields({
     categoryValue,
     bandSlug,
     releaseDate,
   });
-  if (validationError) {
+  if (!parsedFields.success) {
     return {
       status: "error",
-      message: validationError,
+      message: parsedFields.error,
     };
   }
-  const category = categoryValue as NonNullable<
-    EditableSong["category"]
-  >;
 
   const titles = parseSongLines(songText);
   if (titles.length === 0) {
@@ -108,12 +75,7 @@ async function submitSongsImport(
   const existingTitles = new Set(existingRows.map((r) => r.title));
 
   const duplicates: string[] = [];
-  const newSongs: Array<{
-    bandSlug: string | null;
-    category: typeof category;
-    title: string;
-    firstReleaseDate: string | null;
-  }> = [];
+  const newSongs: (typeof songs.$inferInsert)[] = [];
 
   for (const rawTitle of titles) {
     const canonical = canonicalizeSongTitle(rawTitle);
@@ -123,10 +85,8 @@ async function submitSongsImport(
       duplicates.push(canonical);
     } else {
       newSongs.push({
-        bandSlug: category === "original" ? bandSlug : null,
-        category,
+        ...parsedFields.data,
         title: canonical,
-        firstReleaseDate: releaseDate || null,
       });
       existingTitles.add(canonical); // prevent duplicates within the same batch
     }
@@ -190,18 +150,17 @@ async function submitSongEdit(
     };
   }
 
-  const validationError = validateSongFields({
+  const parsedFields = parseSongFields({
     categoryValue,
     bandSlug,
     releaseDate,
   });
-  if (validationError) {
+  if (!parsedFields.success) {
     return {
       status: "error",
-      message: validationError,
+      message: parsedFields.error,
     };
   }
-  const category = categoryValue as EditableSong["category"];
   const db = getDb();
   const [existingSong] = await db
     .select({ id: songs.id })
@@ -230,9 +189,7 @@ async function submitSongEdit(
   const updatedSong = {
     id: songId,
     title,
-    category,
-    bandSlug: category === "original" ? bandSlug : null,
-    firstReleaseDate: releaseDate || null,
+    ...parsedFields.data,
   } satisfies EditableSong;
 
   await db

@@ -1,96 +1,59 @@
-import { describe, expect, it } from "vitest";
-import type { ActorEventRankingEntry } from "@/lib/eventernote/actor-events";
-import { getRecentEventDateWindow, getRankingEventDateWindow } from "@/lib/eventernote/bandori-event-index";
+import { describe, expect, it, vi } from "vitest";
+import { drizzle } from "drizzle-orm/postgres-js";
+import type { Sql } from "postgres";
+import * as schema from "@/lib/db/schema";
 import {
-  filterRecentEventEntries,
-  sortEventRankingEntries,
-  sortRecentEventEntries,
-} from "@/lib/eventernote/event-ranking-snapshot";
+  getRecentEventDateWindow,
+  listRankingEventsFromIndex,
+  listRecentEventsFromIndex,
+} from "@/lib/eventernote/bandori-event-index";
 
-const sampleEvents: ActorEventRankingEntry[] = [
-  {
-    eventernoteEventId: 1,
-    title: "Within Range Earlier Same Day",
-    eventDate: "2026-05-01",
-    venue: "A",
-    attendeeCount: 320,
-    sourceUrl: "https://www.eventernote.com/events/1",
-    bandSlugs: ["mygo"],
-    bandNames: ["MyGO!!!!!"],
-  },
-  {
-    eventernoteEventId: 2,
-    title: "Within Range Higher Count Same Day",
-    eventDate: "2026-05-01",
-    venue: "B",
-    attendeeCount: 480,
-    sourceUrl: "https://www.eventernote.com/events/2",
-    bandSlugs: ["ave-mujica"],
-    bandNames: ["Ave Mujica"],
-  },
-  {
-    eventernoteEventId: 3,
-    title: "Newest In Range",
-    eventDate: "2026-05-06",
-    venue: "C",
-    attendeeCount: 150,
-    sourceUrl: "https://www.eventernote.com/events/3",
-    bandSlugs: ["ras"],
-    bandNames: ["RAISE A SUILEN"],
-  },
-  {
-    eventernoteEventId: 4,
-    title: "Too Old",
-    eventDate: "2026-03-31",
-    venue: "D",
-    attendeeCount: 999,
-    sourceUrl: "https://www.eventernote.com/events/4",
-    bandSlugs: ["roselia"],
-    bandNames: ["Roselia"],
-  },
-  {
-    eventernoteEventId: 5,
-    title: "Too Far In Future",
-    eventDate: "2026-05-09",
-    venue: "E",
-    attendeeCount: 999,
-    sourceUrl: "https://www.eventernote.com/events/5",
-    bandSlugs: ["popipa"],
-    bandNames: ["Poppin'Party"],
-  },
-];
+// Exercise the real query builder and row mapping, without opening a database connection.
+function queryRecorder(rows: unknown[][] = []) {
+  const unsafe = vi.fn<(query: string, params: unknown[]) => { values: () => Promise<unknown[][]> }>(
+    (query) => ({ values: async () => query.includes("max(") ? [[null]] : rows }),
+  );
+  const client = { options: { parsers: {}, serializers: {} }, unsafe };
+  const db = drizzle(client as unknown as Sql, { schema });
+  return { db, unsafe };
+}
 
-describe("filterRecentEventEntries", () => {
-  it("keeps only events from 30 days before through 7 days after the current date", () => {
-    const filtered = filterRecentEventEntries(sampleEvents, new Date("2026-05-01T12:00:00.000+09:00"));
-
-    expect(filtered.map((event) => event.eventernoteEventId)).toEqual([1, 2, 3]);
+describe("event index queries", () => {
+  it("limits recent events to an inclusive Shanghai date window and orders ties consistently", async () => {
+    const { db, unsafe } = queryRecorder();
+    const result = await listRecentEventsFromIndex(new Date("2026-04-30T16:30:00Z"), db);
+    expect(result).toEqual({
+      events: [], updatedAt: null,
+      filteredFrom: "2026-04-01", filteredThrough: "2026-05-08",
+    });
+    const [query, params] = unsafe.mock.calls.find(([query]) => !query.includes("max("))!;
+    expect(query).toContain('"event_date" >= $1');
+    expect(query).toContain('"event_date" <= $2');
+    expect(params).toEqual(["2026-04-01", "2026-05-08"]);
+    expect(query).toMatch(/order by .*"event_date" desc, .*"attendee_count" desc, .*"eventernote_event_id" desc$/);
   });
-});
 
-describe("sortRecentEventEntries", () => {
-  it("sorts by date descending and attendee count descending within the same day", () => {
-    const sorted = sortRecentEventEntries(sampleEvents.slice(0, 3));
-
-    expect(sorted.map((event) => event.eventernoteEventId)).toEqual([3, 2, 1]);
+  it("lists the full index including future events in ascending date and ID order", async () => {
+    const { db, unsafe } = queryRecorder([
+      [7, "Future live", "2099-01-01", null, "https://www.eventernote.com/events/7", 8, ["mygo"], ["MyGO!!!!!"]],
+    ]);
+    expect(await listRankingEventsFromIndex(db)).toEqual({
+      events: [{
+        eventernoteEventId: 7, title: "Future live", eventDate: "2099-01-01", venue: null,
+        sourceUrl: "https://www.eventernote.com/events/7", attendeeCount: 8,
+        bandSlugs: ["mygo"], bandNames: ["MyGO!!!!!"],
+      }],
+      updatedAt: null,
+    });
+    const [query, params] = unsafe.mock.calls.find(([query]) => !query.includes("max("))!;
+    expect(query).not.toContain(" where ");
+    expect(params).toEqual([]);
+    expect(query).toMatch(/order by .*"event_date" asc, .*"eventernote_event_id" asc$/);
   });
-});
 
-describe("sortEventRankingEntries", () => {
-  it("sorts by date ascending and event id ascending within the same day", () => {
-    const sorted = sortEventRankingEntries(sampleEvents.slice(0, 3));
-
-    expect(sorted.map((event) => event.eventernoteEventId)).toEqual([1, 2, 3]);
-  });
-});
-
-describe("event date windows", () => {
-  it("computes ranking and recent windows from Shanghai calendar date", () => {
-    const now = new Date("2026-05-01T12:00:00.000+09:00");
-    expect(getRankingEventDateWindow(now)).toEqual({ filteredThrough: "2026-05-01" });
-    expect(getRecentEventDateWindow(now)).toEqual({
-      filteredFrom: "2026-04-01",
-      filteredThrough: "2026-05-08",
+  it("computes recent windows across year boundaries", () => {
+    expect(getRecentEventDateWindow(new Date("2025-12-31T16:30:00Z"))).toEqual({
+      filteredFrom: "2025-12-02", filteredThrough: "2026-01-08",
     });
   });
 });

@@ -153,9 +153,9 @@ async function main() {
       for (const songId of plan.unreferencedCoverIds) {
         await tx.delete(songs).where(eq(songs.id, songId));
       }
+      await refreshSongLiveState(tx);
     });
 
-    await refreshSongLiveState(db);
     console.info("[song-references] applied cleanup and refreshed live-state flags.");
   } finally {
     await sql.end();

@@ -50,12 +50,6 @@ export function getRecentEventDateWindow(now = new Date()) {
   };
 }
 
-export function getRankingEventDateWindow(now = new Date()) {
-  return {
-    filteredThrough: getCurrentDateInShanghai(now),
-  };
-}
-
 export function toBandoriEventIndexRows(entries: ActorEventRankingEntry[], now = new Date()) {
   return entries.map((entry) => ({
     eventernoteEventId: entry.eventernoteEventId,

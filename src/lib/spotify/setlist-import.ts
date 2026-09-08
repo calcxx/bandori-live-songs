@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from "@/lib/http/fetch-with-timeout";
 import * as cheerio from "cheerio";
 
 type SpotifyResourceType = "playlist" | "album" | "track";
@@ -138,17 +139,17 @@ export async function fetchSpotifySetlist(input: string): Promise<SpotifySetlist
     throw new Error("请填写 Spotify playlist、album 或 track 链接。");
   }
 
-  const response = await fetch(buildSpotifyEmbedUrl(resource), {
+  return fetchWithTimeout(buildSpotifyEmbedUrl(resource), {
     headers: {
       "Accept-Language": "ja,en-US;q=0.9,en;q=0.8,zh-CN;q=0.7",
       "User-Agent": "Mozilla/5.0 (compatible; bdrsongs-setlist-import/1.0)",
     },
     cache: "no-store",
+    timeoutMs: 12_000,
+  }, async (response) => {
+    if (!response.ok) {
+      throw new Error(`Spotify 链接读取失败（HTTP ${response.status}）。`);
+    }
+    return parseSpotifyEmbedPage(await response.text(), resource.type);
   });
-
-  if (!response.ok) {
-    throw new Error(`Spotify 链接读取失败（HTTP ${response.status}）。`);
-  }
-
-  return parseSpotifyEmbedPage(await response.text(), resource.type);
 }

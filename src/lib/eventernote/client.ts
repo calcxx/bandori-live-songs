@@ -11,7 +11,9 @@ const userAgent =
 
 const baseUrl = "https://www.eventernote.com";
 const eventernotePageTimeoutMs = 10000;
-const eventernoteTotalTimeoutMs = 30000;
+const eventernoteBaseTotalTimeoutMs = 30000;
+const eventernoteMaxTotalTimeoutMs = 120000;
+const eventernoteTimeoutGraceMs = 5000;
 const eventernotePageBatchSize = 4;
 const eventernoteMaxFetchAttempts = 3;
 const eventernoteRetryBaseDelayMs = 400;
@@ -19,6 +21,20 @@ const eventernoteRetryBaseDelayMs = 400;
 // Bump this whenever cached Bandori event snapshots become semantically stale,
 // including actor-id mapping updates in BAND_SEEDS.
 export const eventernoteUserEventsParserVersion = 5;
+
+export function getEventernoteTotalTimeoutMs(totalPages: number) {
+  const normalizedTotalPages = Math.max(1, Math.ceil(totalPages));
+  const requestGroups =
+    1 + Math.ceil(Math.max(0, normalizedTotalPages - 1) / eventernotePageBatchSize);
+
+  return Math.min(
+    eventernoteMaxTotalTimeoutMs,
+    Math.max(
+      eventernoteBaseTotalTimeoutMs,
+      eventernoteTimeoutGraceMs + requestGroups * eventernotePageTimeoutMs,
+    ),
+  );
+}
 
 export class EventernoteUserNotFoundError extends Error {
   constructor(userId: string) {
@@ -49,21 +65,19 @@ async function fetchUserEventsPage(userId: string, page = 1, timeoutMs = eventer
     url.searchParams.set("page", String(page));
   }
 
-  const response = await fetchWithTimeout(url, {
+  const html = await fetchWithTimeout(url, {
     headers: buildHeaders(),
     next: { revalidate: 0 },
     timeoutMs,
+  }, async (response) => {
+    if (response.status === 404) {
+      throw new EventernoteUserNotFoundError(userId);
+    }
+    if (!response.ok) {
+      throw new EventernoteHttpError(userId, response.status);
+    }
+    return response.text();
   });
-
-  if (response.status === 404) {
-    throw new EventernoteUserNotFoundError(userId);
-  }
-
-  if (!response.ok) {
-    throw new EventernoteHttpError(userId, response.status);
-  }
-
-  const html = await response.text();
 
   const parsed = parseEventernoteUserEventsPage(html);
 
@@ -119,7 +133,8 @@ async function fetchUserEventsBatch(
 
 async function fetchAllUserEventsOnce(userId: string) {
   const startedAt = Date.now();
-  const remainingTimeout = () => Math.max(1000, eventernoteTotalTimeoutMs - (Date.now() - startedAt));
+  let totalTimeoutMs = eventernoteBaseTotalTimeoutMs;
+  const remainingTimeout = () => Math.max(1000, totalTimeoutMs - (Date.now() - startedAt));
 
   const firstPage = await fetchUserEventsPage(userId, 1, Math.min(eventernotePageTimeoutMs, remainingTimeout()));
   const events: EventernoteEventSnapshot[] = [];
@@ -146,6 +161,7 @@ async function fetchAllUserEventsOnce(userId: string) {
       ? Math.max(1, Math.ceil(firstPage.totalCount / firstPage.pageItemCount))
       : 1;
   const initialLastPage = Math.max(maxDiscoveredPage, estimatedTotalPages);
+  totalTimeoutMs = getEventernoteTotalTimeoutMs(initialLastPage);
 
   for (let page = 2; page <= initialLastPage; page += 1) {
     pagesToFetch.add(page);
@@ -162,8 +178,8 @@ async function fetchAllUserEventsOnce(userId: string) {
   }
 
   while (pagesToFetch.size > 0) {
-    if (Date.now() - startedAt >= eventernoteTotalTimeoutMs) {
-      throw new Error(`Eventernote user event fetch exceeded ${eventernoteTotalTimeoutMs}ms.`);
+    if (Date.now() - startedAt >= totalTimeoutMs) {
+      throw new FetchTimeoutError(`Eventernote user event fetch exceeded ${totalTimeoutMs}ms.`);
     }
 
     const batchPages = [...pagesToFetch].filter((page) => !fetchedPages.has(page)).sort((left, right) => left - right);
@@ -228,17 +244,13 @@ export async function fetchAllUserEvents(userId: string) {
 export async function fetchUserEventCount(userId: string, timeoutMs = eventernotePageTimeoutMs): Promise<number | null> {
   try {
     const url = new URL(`/users/${encodeURIComponent(userId)}/events`, baseUrl);
-    const response = await fetchWithTimeout(url, {
+    const html = await fetchWithTimeout(url, {
       headers: buildHeaders(),
       next: { revalidate: 0 },
       timeoutMs,
-    });
+    }, async (response) => response.ok ? response.text() : null);
+    if (html === null) return null;
 
-    if (!response.ok) {
-      return null;
-    }
-
-    const html = await response.text();
     const parsed = parseEventernoteUserEventsPage(html);
 
     if (parsed.missingUser) {
@@ -253,17 +265,19 @@ export async function fetchUserEventCount(userId: string, timeoutMs = eventernot
 
 export async function fetchEventernoteUserProfile(userId: string, timeoutMs = eventernotePageTimeoutMs) {
   const url = new URL(`/users/${encodeURIComponent(userId)}`, baseUrl);
-  const response = await fetchWithTimeout(url, {
+  const html = await fetchWithTimeout(url, {
     headers: buildHeaders(),
     next: { revalidate: 0 },
     timeoutMs,
+  }, async (response) => {
+    if (response.status === 404) {
+      throw new EventernoteUserNotFoundError(userId);
+    }
+    if (!response.ok) {
+      throw new EventernoteHttpError(userId, response.status);
+    }
+    return response.text();
   });
-
-  const html = await response.text();
-
-  if (response.status === 404) {
-    throw new EventernoteUserNotFoundError(userId);
-  }
 
   const parsed = parseEventernoteUserProfilePage(html);
 

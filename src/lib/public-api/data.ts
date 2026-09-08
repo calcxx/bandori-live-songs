@@ -11,7 +11,7 @@ import {
   setlistEntries,
   songs,
 } from "@/lib/db/schema";
-import { normalizeSongTitle } from "@/lib/music/title-utils";
+import { createSongLookup } from "@/lib/music/song-lookup";
 import type {
   PublicApiBand,
   PublicApiEventDetail,
@@ -52,7 +52,7 @@ function toEventSummary(
   };
 }
 
-const getPublicApiCatalog = unstable_cache(
+export const getPublicApiCatalog = unstable_cache(
   async () => {
     const db = getDb();
     const [bandRows, songRows] = await Promise.all([
@@ -176,24 +176,9 @@ export async function getPublicApiSnapshot(): Promise<PublicApiSnapshot> {
       getPublicApiCatalog(),
       getPublicApiCompactEvents(),
     ]);
-  const songById = new Map(
-    publicSongs.map((song) => [song.id, song]),
-  );
-  const songByTitle = new Map(
-    publicSongs.map((song) => [song.title, song]),
-  );
-  const songByNormalizedTitle = new Map<
-    string,
-    PublicApiSong | null
-  >();
-  for (const song of publicSongs) {
-    const normalizedTitle = normalizeSongTitle(song.title);
-    if (!normalizedTitle) continue;
-    songByNormalizedTitle.set(
-      normalizedTitle,
-      songByNormalizedTitle.has(normalizedTitle) ? null : song,
-    );
-  }
+  const songLookup = createSongLookup(publicSongs);
+  // The public API does not use empty normalized titles as fallback matches.
+  songLookup.byNormalizedTitle.delete("");
 
   const publicEvents: PublicApiEventDetail[] = compactEvents.map(
     (event) => ({
@@ -207,12 +192,8 @@ export async function getPublicApiSnapshot(): Promise<PublicApiSnapshot> {
         song:
           (entry.songId === null
             ? null
-            : songById.get(entry.songId)) ??
-          songByTitle.get(entry.title) ??
-          songByNormalizedTitle.get(
-            normalizeSongTitle(entry.title),
-          ) ??
-          null,
+            : songLookup.byId.get(entry.songId)) ??
+          songLookup.matchTitle(entry.title),
       })),
     }),
   );

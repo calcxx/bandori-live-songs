@@ -1,4 +1,4 @@
-import { updateTag } from "next/cache";
+import { isValidIsoDate } from "@/lib/calendar-date";
 import { setTimeout as sleep } from "node:timers/promises";
 import { and, eq } from "drizzle-orm";
 import { BAND_SEEDS } from "@/lib/constants/bands";
@@ -22,6 +22,8 @@ export type MusicBrainzRecordingHit = {
   title: string;
   firstReleaseDate?: string;
   video?: boolean;
+  disambiguation?: string;
+  releaseTitles?: string[];
 };
 
 export type ExistingSongRef = {
@@ -91,12 +93,26 @@ export function lookbackSinceDate(now: Date = new Date(), days = LOOKBACK_DAYS):
   return d.toISOString().slice(0, 10);
 }
 
-export function isFullReleaseDate(value: string | undefined): value is string {
-  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
-}
-
 export function isReleaseDateInWindow(date: string, sinceDate: string): boolean {
   return date >= sinceDate;
+}
+
+function isCoverReleaseTitle(rawTitle: string) {
+  const normalized = rawTitle.normalize("NFKC").toLowerCase();
+  return normalized.includes("カバー") || normalized.includes("カヴァー") || /\bcovers?\b/i.test(normalized);
+}
+
+function coverReleaseTitle(recording: MusicBrainzRecordingHit) {
+  return recording.releaseTitles?.find(isCoverReleaseTitle) ?? null;
+}
+
+function isCoverRecording(recording: MusicBrainzRecordingHit) {
+  return (
+    isExcludedTrackTitle(recording.title) ||
+    /\bcovers?\b/i.test(recording.disambiguation ?? "") ||
+    /カ(?:バー|ヴァー)/u.test(recording.disambiguation ?? "") ||
+    coverReleaseTitle(recording) !== null
+  );
 }
 
 /** Pure filter: MB hits → insert / earlier-date update / skip decisions. */
@@ -131,7 +147,7 @@ export function filterMusicBrainzRecordingsForBand(
       continue;
     }
 
-    if (!isFullReleaseDate(recording.firstReleaseDate)) {
+    if (!isValidIsoDate(recording.firstReleaseDate)) {
       decisions.push({
         action: "skip",
         bandSlug,
@@ -153,14 +169,15 @@ export function filterMusicBrainzRecordingsForBand(
       continue;
     }
 
-    if (isExcludedTrackTitle(recording.title)) {
+    const coverRelease = coverReleaseTitle(recording);
+    if (isCoverRecording(recording)) {
       skippedExcluded += 1;
       decisions.push({
         action: "skip",
         bandSlug,
         rawTitle: recording.title,
         reason: "excluded",
-        detail: recording.firstReleaseDate,
+        detail: coverRelease ? `cover release: ${coverRelease}` : recording.firstReleaseDate,
       });
       continue;
     }
@@ -272,6 +289,13 @@ type MusicBrainzSearchResponse = {
     title: string;
     "first-release-date"?: string;
     video?: boolean;
+    disambiguation?: string;
+    releases?: Array<{
+      title?: string;
+      "release-group"?: {
+        title?: string;
+      };
+    }>;
   }>;
 };
 
@@ -302,6 +326,12 @@ async function searchRecentRecordingsByArtist(
       title: recording.title,
       firstReleaseDate: recording["first-release-date"],
       video: recording.video,
+      disambiguation: recording.disambiguation,
+      releaseTitles: recording.releases?.flatMap((release) =>
+        [release.title, release["release-group"]?.title].filter(
+          (title): title is string => Boolean(title),
+        ),
+      ),
     }));
   }
 
@@ -489,11 +519,6 @@ export async function syncRecentMusicBrainzSongs(
       }
       log(`updated ${updated} release date(s)`);
     }
-  }
-
-  if (!dryRun && (inserted > 0 || updated > 0)) {
-    updateTag("song-catalog");
-    updateTag("open-api-v1");
   }
 
   return {

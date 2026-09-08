@@ -16,10 +16,10 @@ const monthNames = [
 ] as const;
 
 export const enCopy = {
-  metadataTitle: "BanG Dream! Live Song Stats",
+  metadataTitle: "Bandori Live Song Stats",
   metadataDescription:
-    "Enter an Eventernote ID to see which BanG Dream! songs you have heard live.",
-  navTitleMobile: "BanG Dream! Live Stats",
+    "Enter an Eventernote ID to see which Bandori songs you have heard live.",
+  navTitleMobile: "Bandori Live Stats",
   navTitleDesktop: "BanG Dream! Live Song Stats",
   languageToggleAria: "Change display language",
   themeToggleAria: "Change theme",
@@ -69,7 +69,7 @@ export const enCopy = {
     "Eventernote usernames may contain only letters, numbers, and underscores.",
   configErrorTitle: "Database not configured",
   configErrorMessage:
-    "DATABASE_URL / DIRECT_URL is not configured, so PostgreSQL cannot be reached.",
+    "DATABASE_URL / DIRECT_URL is not configured, so Supabase Postgres cannot be reached.",
   upstreamErrorTitle: "Could not fetch Eventernote data",
   upstreamErrorMessage:
     "Eventernote data is temporarily unavailable. Please try again later.",
@@ -106,7 +106,7 @@ export const enCopy = {
   closeSongEventsAria: "Close performance history",
   eventCoverageTitle: "Events and Setlist Coverage",
   eventCoverageNote: "The events this user attended are shown below.",
-  eventUnlockSongsLabel: "First heard at this event",
+  eventUnlockSongsLabel: "First heard",
   eventUnlockSongsSuffix: (count: number) =>
     count === 1 ? "song" : "songs",
   eventSetlistLabel: "Songs performed at this event",
@@ -121,7 +121,7 @@ export const enCopy = {
   saveImageButtonSuccess: "Saved!",
   manualRefresh: "Refresh",
   adminNav: "Admin",
-  songStatsNav: "Performance Counts",
+  songStatsNav: "Song Stats",
   songStatsTitle: "Song Performance Counts",
   songStatsDescription:
     "See how many recorded events featured each band's original songs. Select a song to view its performances.",

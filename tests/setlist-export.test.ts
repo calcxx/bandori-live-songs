@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  extractDistinctiveTitleNeedle,
-  scoreEventCandidateForExport,
-} from "@/lib/setlist-export/scoring";
+import { scoreEventCandidateForExport } from "@/lib/setlist-export/scoring";
 
 describe("event title candidate scoring", () => {
   const day1 = { title: "MEGA VEGAS 2026 DAY1", eventDate: "2026-03-20" };
@@ -17,8 +14,8 @@ describe("event title candidate scoring", () => {
 
   it("ignores date when eventDate is omitted", () => {
     const query = { title: "MEGA VEGAS 2026 DAY1" };
-    expect(scoreEventCandidateForExport(query, day1)).toBeGreaterThan(
-      scoreEventCandidateForExport(query, day2),
+    expect(scoreEventCandidateForExport(query, day1)).toBe(
+      scoreEventCandidateForExport(query, { ...day1, eventDate: day2.eventDate }),
     );
   });
 
@@ -29,7 +26,6 @@ describe("event title candidate scoring", () => {
     expect(scoreEventCandidateForExport(query, { title: storedTitle, eventDate: "2025-08-29" })).toBeGreaterThan(
       0,
     );
-    expect(extractDistinctiveTitleNeedle(fansTitle)).toBe("thanxx");
   });
 
   it("tolerates small spelling mistakes in manual searches", () => {
@@ -46,15 +42,5 @@ describe("event title candidate scoring", () => {
       { title: "RAISE A SUILEN SPECIAL LIVE", eventDate: "2024-01-01" },
     );
     expect(score).toBe(0);
-  });
-
-  it("requires exact date match when filtering ranked results", () => {
-    const ranked = [
-      { event: day1, score: 25_000 },
-      { event: day2, score: 24_000 },
-    ];
-    const dateMatches = ranked.filter((item) => item.event.eventDate === "2026-03-21");
-    expect(dateMatches).toHaveLength(1);
-    expect(dateMatches[0]?.event.eventDate).toBe("2026-03-21");
   });
 });

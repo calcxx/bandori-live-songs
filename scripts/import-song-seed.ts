@@ -1,7 +1,7 @@
 import { pathToFileURL } from "node:url";
 import { loadEnvConfig } from "@next/env";
 import { eq } from "drizzle-orm";
-import { getLocalDiscographyCatalog } from "../src/lib/bandori/discography-catalog";
+import { getSongSeed } from "../src/lib/music/song-seed";
 import { PROJECT_COMMON_SLUG } from "../src/lib/constants/bands";
 import { connectDatabase } from "../src/lib/db/core";
 import { songs } from "../src/lib/db/schema";
@@ -20,7 +20,7 @@ function chunk<T>(items: T[], size: number) {
   return chunks;
 }
 
-export function planDiscographySync(
+export function planSongSeedImport(
   catalogSongs: Array<{
     bandSlug: string;
     title: string;
@@ -79,9 +79,9 @@ export function planDiscographySync(
   return { inserts, updates, conflicts };
 }
 
-export async function importDiscography() {
+export async function importSongSeed() {
   const { db, sql } = connectDatabase(true);
-  const catalogSongs = getLocalDiscographyCatalog().songs;
+  const catalogSongs = getSongSeed().songs;
 
   try {
     await db.transaction(async (tx) => {
@@ -93,14 +93,14 @@ export async function importDiscography() {
           category: songs.category,
         })
         .from(songs);
-      const plan = planDiscographySync(
+      const plan = planSongSeedImport(
         songRows,
         existingRows,
       );
 
       for (const conflict of plan.conflicts) {
         console.warn(
-          `[discography] preserve manual ${conflict.existingCategory} song with conflicting title: ${conflict.title}`,
+          `[song-seed] preserve manual ${conflict.existingCategory} song with conflicting title: ${conflict.title}`,
         );
       }
       for (const update of plan.updates) {
@@ -119,15 +119,15 @@ export async function importDiscography() {
           target: songs.title,
         });
       }
+      await refreshSongLiveState(tx);
     });
-    await refreshSongLiveState(db);
   } finally {
     await sql.end();
   }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  importDiscography().catch((error) => {
+  importSongSeed().catch((error) => {
     console.error(error);
     process.exit(1);
   });

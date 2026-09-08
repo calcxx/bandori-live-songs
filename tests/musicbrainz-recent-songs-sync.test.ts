@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   filterMusicBrainzRecordingsForBand,
-  isFullReleaseDate,
   isReleaseDateInWindow,
   lookbackSinceDate,
   type ExistingSongRef,
@@ -19,13 +18,6 @@ describe("lookbackSinceDate", () => {
 });
 
 describe("release date helpers", () => {
-  it("accepts only full YYYY-MM-DD dates", () => {
-    expect(isFullReleaseDate("2026-07-10")).toBe(true);
-    expect(isFullReleaseDate("2026-07")).toBe(false);
-    expect(isFullReleaseDate("2026")).toBe(false);
-    expect(isFullReleaseDate(undefined)).toBe(false);
-  });
-
   it("keeps dates on or after the since boundary", () => {
     expect(isReleaseDateInWindow("2026-07-08", "2026-07-08")).toBe(true);
     expect(isReleaseDateInWindow("2026-07-09", "2026-07-08")).toBe(true);
@@ -136,6 +128,44 @@ describe("filterMusicBrainzRecordingsForBand", () => {
     ]);
   });
 
+  it("excludes recordings marked as covers by MusicBrainz metadata", () => {
+    const result = filterMusicBrainzRecordingsForBand(
+      "millsage",
+      [
+        {
+          title: "青のすみか",
+          disambiguation: "cover",
+          firstReleaseDate: "2026-08-28",
+        },
+        {
+          title: "MATSURI BAYASHI",
+          firstReleaseDate: "2026-11-25",
+          releaseTitles: ["バンドリ！ ガールズバンドパーティ！ カバーコレクションVol.11"],
+        },
+        {
+          title: "everscape",
+          firstReleaseDate: "2026-08-31",
+        },
+      ],
+      sinceDate,
+      new Map(),
+    );
+
+    expect(result.skippedExcluded).toBe(2);
+    expect(result.toInsert).toEqual([
+      {
+        bandSlug: "millsage",
+        title: "everscape",
+        firstReleaseDate: "2026-08-31",
+        rawTitle: "everscape",
+      },
+    ]);
+    expect(result.decisions.slice(0, 2)).toEqual([
+      expect.objectContaining({ action: "skip", reason: "excluded" }),
+      expect.objectContaining({ action: "skip", reason: "excluded" }),
+    ]);
+  });
+
   it("dedupes multiple versions of the same new song within one batch", () => {
     const result = filterMusicBrainzRecordingsForBand(
       "mygo",
@@ -182,4 +212,15 @@ describe("filterMusicBrainzRecordingsForBand", () => {
 
     expect(result.toInsert).toEqual([]);
   });
+});
+
+
+it("does not propose database writes for impossible release dates", () => {
+  const result = filterMusicBrainzRecordingsForBand(
+    "roselia", [{ title: "Invalid date song", firstReleaseDate: "2026-99-99" }],
+    "2026-01-01", new Map(),
+  );
+  expect(result.toInsert).toEqual([]);
+  expect(result.toUpdate).toEqual([]);
+  expect(result.decisions).toMatchObject([{ action: "skip", reason: "incomplete-date" }]);
 });

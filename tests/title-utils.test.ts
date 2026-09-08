@@ -6,10 +6,6 @@ import {
   normalizeQuotesForDisplay,
   normalizeSongTitle,
 } from "@/lib/music/title-utils";
-import {
-  chooseEarliestMusicBrainzRecording,
-  musicBrainzCorrectionKey,
-} from "@/lib/musicbrainz/release-date-corrections";
 
 describe("title-utils", () => {
   it("removes track numbers and version suffixes", () => {
@@ -78,23 +74,8 @@ describe("title-utils", () => {
     expect(isExcludedTrackTitle("ドラマチック!アライブ")).toBe(false);
     expect(isExcludedTrackTitle("「もういちど ルミナス」MV")).toBe(true);
     expect(isExcludedTrackTitle("2nd LIVE「そのままを抱きしめて」アフタートーク")).toBe(true);
+    expect(isExcludedTrackTitle("青のすみか (cover)")).toBe(true);
+    expect(isExcludedTrackTitle("青のすみか (COVER VERSION)")).toBe(true);
     expect(isExcludedTrackTitle("2. Game Changer")).toBe(false);
-  });
-});
-
-describe("MusicBrainz release-date corrections", () => {
-  it("uses a normalized correction key for quote variants", () => {
-    expect(musicBrainzCorrectionKey("raise-a-suilen", "EXPOSE 'Burn out!!!'"))
-      .toBe(musicBrainzCorrectionKey("raise-a-suilen", "EXPOSE ‘Burn out!!!’"));
-  });
-
-  it("selects the earliest matching non-video recording", () => {
-    expect(
-      chooseEarliestMusicBrainzRecording("EXPOSE ‘Burn out!!!’", [
-        { title: "EXPOSE ‘Burn out!!!’", video: true, "first-release-date": "2019-02-20", score: 100 },
-        { title: "EXPOSE ‘Burn out!!!’", video: false, "first-release-date": "2020-08-19", score: 100 },
-        { title: "EXPOSE ‘Burn out!!!’", video: false, "first-release-date": "2019-02-20", score: 100 },
-      ]),
-    ).toEqual({ firstReleaseDate: "2019-02-20", mbTitle: "EXPOSE ‘Burn out!!!’" });
   });
 });

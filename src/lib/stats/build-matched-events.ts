@@ -7,7 +7,7 @@ import { events, setlistEntries } from "@/lib/db/schema";
 import { shouldIncludeEventInSongStats } from "@/lib/eventernote/match-rules";
 import { sanitizeEventernoteEventTitle } from "@/lib/eventernote/event-meta";
 import { defaultEventTitleTagsToStrip } from "@/lib/events/event-visibility";
-import { normalizeSongTitle } from "@/lib/music/title-utils";
+import { createSongLookup } from "@/lib/music/song-lookup";
 import type { BandoriUserEventSnapshot } from "@/lib/eventernote/bandori-user-events";
 import type {
   MatchedEventEntry,
@@ -114,34 +114,17 @@ export async function buildMatchedEvents(
         .orderBy(asc(setlistEntries.eventId), asc(setlistEntries.orderIndex))
     : [];
 
-  const songById = new Map(songsWithLiveState.map((song) => [song.id, song]));
-  const songIdByTitle = new Map(songsWithLiveState.map((song) => [song.title, song.id]));
-  const songIdByNormalizedTitle = new Map<string, number | null>();
-  for (const song of songsWithLiveState) {
-    const normalizedTitle = normalizeSongTitle(song.title);
-    const existing = songIdByNormalizedTitle.get(normalizedTitle);
-    if (existing === undefined) {
-      songIdByNormalizedTitle.set(normalizedTitle, song.id);
-      continue;
-    }
-    if (existing !== song.id) {
-      songIdByNormalizedTitle.set(normalizedTitle, null);
-    }
-  }
+  const songLookup = createSongLookup(songsWithLiveState);
 
   const heardSongIdsByEventId = new Map<number, number[]>();
   const setlistEntriesByEventId = new Map<number, MatchedEventSetlistEntry[]>();
   for (const row of setlistRows) {
     const bucket = heardSongIdsByEventId.get(row.eventId) ?? [];
-    let songId = row.songId ?? songIdByTitle.get(row.rawTitle);
-    if (!songId) {
-      const fallbackSongId = songIdByNormalizedTitle.get(normalizeSongTitle(row.rawTitle));
-      if (fallbackSongId) songId = fallbackSongId;
-    }
+    const songId = row.songId ?? songLookup.matchTitle(row.rawTitle)?.id;
     if (songId) bucket.push(songId);
     heardSongIdsByEventId.set(row.eventId, bucket);
 
-    const song = songId ? songById.get(songId) ?? null : null;
+    const song = songId ? songLookup.byId.get(songId) ?? null : null;
     const entryBucket = setlistEntriesByEventId.get(row.eventId) ?? [];
     entryBucket.push({
       position: row.orderIndex,

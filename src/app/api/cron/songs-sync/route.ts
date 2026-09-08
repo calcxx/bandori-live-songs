@@ -1,3 +1,4 @@
+import { revalidateTag } from "next/cache";
 import { syncRecentMusicBrainzSongs } from "@/lib/musicbrainz/recent-songs-sync";
 
 export const runtime = "nodejs";
@@ -27,6 +28,12 @@ export async function GET(request: Request) {
       logs.push(message);
     },
   });
+
+  if (!dryRun && (result.inserted > 0 || result.updated > 0)) {
+    for (const tag of ["song-catalog", "open-api-v1"]) {
+      revalidateTag(tag, { expire: 0 });
+    }
+  }
 
   return Response.json({
     ok: result.errors.length === 0,

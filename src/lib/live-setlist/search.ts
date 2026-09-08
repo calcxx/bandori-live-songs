@@ -10,6 +10,7 @@ import {
   events,
   setlistEntries,
 } from "@/lib/db/schema";
+import { createSongLookup } from "@/lib/music/song-lookup";
 import { normalizeSongTitle } from "@/lib/music/title-utils";
 import { getSongCatalog } from "@/lib/stats/catalog-cache";
 import {
@@ -296,26 +297,7 @@ export async function getLiveSetlist(
     return null;
   }
 
-  const songById = new Map(
-    catalog.songsWithLiveState.map((song) => [song.id, song]),
-  );
-  const songByTitle = new Map(
-    catalog.songsWithLiveState.map((song) => [song.title, song]),
-  );
-  const songByNormalizedTitle = new Map<
-    string,
-    (typeof catalog.songsWithLiveState)[number] | null
-  >();
-
-  for (const song of catalog.songsWithLiveState) {
-    const normalizedTitle = normalizeSongTitle(song.title);
-    const existing = songByNormalizedTitle.get(normalizedTitle);
-    if (existing === undefined) {
-      songByNormalizedTitle.set(normalizedTitle, song);
-    } else if (existing?.id !== song.id) {
-      songByNormalizedTitle.set(normalizedTitle, null);
-    }
-  }
+  const songLookup = createSongLookup(catalog.songsWithLiveState);
 
   const bandNameBySlug = new Map(
     BAND_SEEDS.map((band) => [band.slug, band.nameJa]),
@@ -347,12 +329,9 @@ export async function getLiveSetlist(
       searchableLiveSetlists.candidates,
     ),
     entries: rows.map((row) => {
-      const normalizedTitle = normalizeSongTitle(row.entryTitle);
       const song =
-        (row.songId ? songById.get(row.songId) : null) ??
-        songByTitle.get(row.entryTitle) ??
-        songByNormalizedTitle.get(normalizedTitle) ??
-        null;
+        (row.songId ? songLookup.byId.get(row.songId) : null) ??
+        songLookup.matchTitle(row.entryTitle);
       const key = performanceKey(song?.id ?? null, row.entryTitle);
       const firstPerformanceEventId =
         firstPerformanceEventIds[key] ??

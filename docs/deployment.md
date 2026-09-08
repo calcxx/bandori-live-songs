@@ -4,7 +4,7 @@
 
 ## 前置条件
 
-- Node.js 20+
+- Node.js 22（至少 22.13；版本提示见 `.nvmrc`）
 - PostgreSQL 数据库（Supabase、Railway、自建等均可）
 - 可访问 Eventernote 的网络环境
 
@@ -14,7 +14,8 @@
 git clone <your-repo-url>
 cd bdr-events-to-songs
 cp .env.example .env.local
-npm install
+nvm use
+npm ci
 ```
 
 ## 2. 配置环境变量
@@ -71,7 +72,7 @@ npm run start
 
 项目包含两条每日定时任务：
 
-| 接口 | 用途 | Vercel 示例时间（UTC） |
+| 接口 | 用途 | 建议时间（UTC） |
 |---|---|---|
 | `/api/cron/event-ranking` | 刷新各乐队演员页活动索引 | `16:00` |
 | `/api/cron/songs-sync` | 从 MusicBrainz 补充新歌并修正更早发售日 | `17:00` |

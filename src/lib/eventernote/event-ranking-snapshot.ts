@@ -4,7 +4,7 @@ import { connectDatabase, getDb } from "@/lib/db/core";
 import { emptyEventVisibilityRules } from "@/lib/events/event-visibility";
 import { readEventVisibilityRulesFromDb } from "@/lib/events/event-visibility-rules-store";
 import { fetchAllActorEvents, mergeActorEvents } from "./actor-events";
-import { getRecentEventDateWindow, syncBandoriEventIndex } from "./bandori-event-index";
+import { syncBandoriEventIndex } from "./bandori-event-index";
 import { sanitizeEventernoteEventTitle } from "./event-meta";
 import type { ActorEventRankingEntry } from "./actor-events";
 
@@ -13,40 +13,6 @@ export type BandoriActorEventsRefreshResult = {
   removedEventCount: number;
   updatedAt: string;
 };
-
-export { getCurrentDateInShanghai, getRecentEventDateWindow } from "./bandori-event-index";
-
-export function filterRecentEventEntries(events: ActorEventRankingEntry[], now = new Date()) {
-  const { filteredFrom, filteredThrough } = getRecentEventDateWindow(now);
-  return events.filter((event) => event.eventDate >= filteredFrom && event.eventDate <= filteredThrough);
-}
-
-export function sortRecentEventEntries(events: ActorEventRankingEntry[]) {
-  return [...events].sort((left, right) => {
-    const dateCompare = right.eventDate.localeCompare(left.eventDate);
-    if (dateCompare !== 0) {
-      return dateCompare;
-    }
-
-    const attendeeCompare = right.attendeeCount - left.attendeeCount;
-    if (attendeeCompare !== 0) {
-      return attendeeCompare;
-    }
-
-    return right.eventernoteEventId - left.eventernoteEventId;
-  });
-}
-
-export function sortEventRankingEntries(events: ActorEventRankingEntry[]) {
-  return [...events].sort((left, right) => {
-    const dateCompare = left.eventDate.localeCompare(right.eventDate);
-    if (dateCompare !== 0) {
-      return dateCompare;
-    }
-
-    return left.eventernoteEventId - right.eventernoteEventId;
-  });
-}
 
 async function fetchMergedActorEvents() {
   const bandSeeds = BAND_SEEDS.filter((band) => band.groupType === "band" && band.eventernoteActorId !== null);
@@ -63,8 +29,6 @@ async function fetchMergedActorEvents() {
   }
 
   return {
-    bandSeeds,
-    allEntries,
     mergedEvents: mergeActorEvents(allEntries),
   };
 }
@@ -82,7 +46,7 @@ function sanitizeActorEventTitles(
   }));
 }
 
-/** One crawl: upsert bandori_event_index only. */
+/** One complete crawl: synchronize bandori_event_index with actor pages. */
 export async function refreshBandoriActorEvents(): Promise<BandoriActorEventsRefreshResult> {
   const { mergedEvents } = await fetchMergedActorEvents();
   const db = getDb();

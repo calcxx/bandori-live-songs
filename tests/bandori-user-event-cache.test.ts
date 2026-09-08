@@ -2,13 +2,8 @@ import { describe, expect, it } from "vitest";
 import { createBandoriUserEventSnapshots } from "@/lib/eventernote/bandori-user-events";
 import type { BandoriEventIndexLookup } from "@/lib/eventernote/bandori-event-index";
 import type { EventernoteEventSnapshot } from "@/lib/eventernote/parser";
-import {
-  getRankingEventDateWindow,
-  getRecentEventDateWindow,
-  toBandoriEventIndexRows,
-} from "@/lib/eventernote/bandori-event-index";
+import { toBandoriEventIndexRows } from "@/lib/eventernote/bandori-event-index";
 import type { ActorEventRankingEntry } from "@/lib/eventernote/actor-events";
-import { filterRecentEventEntries } from "@/lib/eventernote/event-ranking-snapshot";
 
 function snapshot(overrides: Partial<EventernoteEventSnapshot>): EventernoteEventSnapshot {
   return {
@@ -43,10 +38,10 @@ describe("bandori user event cache", () => {
   it("keeps only index hits and prefers index metadata over list-page fields", () => {
     const index = new Map<number, BandoriEventIndexLookup>([
       [
-        100001,
-        indexEntry(100001, ["poppin-party", "roselia"], {
-          title: "BanG Dream! 合同ライブ",
-          venue: "武蔵野の森総合スポーツプラザ",
+        101,
+        indexEntry(101, ["poppin-party", "roselia"], {
+          title: "Indexed Bandori Test Live",
+          venue: "Indexed Test Venue",
         }),
       ],
     ]);
@@ -54,14 +49,14 @@ describe("bandori user event cache", () => {
     const cached = createBandoriUserEventSnapshots(
       [
         snapshot({
-          eventernoteEventId: 100001,
+          eventernoteEventId: 101,
           title: "wrong title from misaligned list row",
           venue: "wrong venue",
-          actorIds: [123456],
+          actorIds: [999],
           actorNames: ["Unrelated Artist"],
         }),
         snapshot({
-          eventernoteEventId: 396309,
+          eventernoteEventId: 102,
           actorIds: [14234],
           actorNames: ["Poppin'Party"],
         }),
@@ -71,10 +66,10 @@ describe("bandori user event cache", () => {
 
     expect(cached).toEqual([
       {
-        eventernoteEventId: 100001,
-        title: "BanG Dream! 合同ライブ",
+        eventernoteEventId: 101,
+        title: "Indexed Bandori Test Live",
         eventDate: "2026-01-01",
-        venue: "武蔵野の森総合スポーツプラザ",
+        venue: "Indexed Test Venue",
         matchedBandSlugs: ["poppin-party", "roselia"],
         sourceUrl: "https://www.eventernote.com/events/1",
       },
@@ -85,7 +80,7 @@ describe("bandori user event cache", () => {
     const cached = createBandoriUserEventSnapshots(
       [
         snapshot({
-          eventernoteEventId: 999999,
+          eventernoteEventId: 103,
           eventDate: "2099-01-01",
           actorIds: [66346],
           actorNames: ["MyGO!!!!!"],
@@ -99,41 +94,41 @@ describe("bandori user event cache", () => {
 
   it("maps multi-band and single-band lives from index band slugs", () => {
     const index = new Map<number, BandoriEventIndexLookup>([
-      [438720, indexEntry(438720, ["ave-mujica"], { title: "Ave Mujica LIVE TOUR 2026「Exitus」東京公演" })],
+      [201, indexEntry(201, ["ave-mujica"], { title: "Example Band Live" })],
       [
-        452934,
-        indexEntry(452934, ["poppin-party", "roselia"], {
-          title: "Poppin'Party×Roselia 合同ライブ「DREAMS GO ON」",
+        202,
+        indexEntry(202, ["poppin-party", "roselia"], {
+          title: "Example Joint Live",
         }),
       ],
       [
-        430842,
-        indexEntry(430842, ["poppin-party"], {
-          title: "Poppin’Party New Year LIVE「Happy BanG Year!!」",
+        203,
+        indexEntry(203, ["poppin-party"], {
+          title: "Example Single-Band Live",
         }),
       ],
     ]);
 
     const cached = createBandoriUserEventSnapshots(
       [
-        snapshot({ eventernoteEventId: 438720, title: "ignored" }),
-        snapshot({ eventernoteEventId: 452934, title: "ignored" }),
-        snapshot({ eventernoteEventId: 430842, title: "ignored" }),
+        snapshot({ eventernoteEventId: 201, title: "ignored" }),
+        snapshot({ eventernoteEventId: 202, title: "ignored" }),
+        snapshot({ eventernoteEventId: 203, title: "ignored" }),
       ],
       index,
     );
 
     expect(cached).toEqual([
       expect.objectContaining({
-        eventernoteEventId: 438720,
+        eventernoteEventId: 201,
         matchedBandSlugs: ["ave-mujica"],
       }),
       expect.objectContaining({
-        eventernoteEventId: 452934,
+        eventernoteEventId: 202,
         matchedBandSlugs: ["poppin-party", "roselia"],
       }),
       expect.objectContaining({
-        eventernoteEventId: 430842,
+        eventernoteEventId: 203,
         matchedBandSlugs: ["poppin-party"],
       }),
     ]);
@@ -168,45 +163,5 @@ describe("bandori event index rows", () => {
         updatedAt: now,
       },
     ]);
-  });
-});
-
-describe("ranking/recent date windows from merged events", () => {
-  it("filters ranking through today and recent within the rolling window", () => {
-    const merged: ActorEventRankingEntry[] = [
-      {
-        eventernoteEventId: 2,
-        title: "past",
-        eventDate: "2026-07-01",
-        venue: null,
-        attendeeCount: 5,
-        sourceUrl: "https://www.eventernote.com/events/2",
-        bandSlugs: ["roselia"],
-        bandNames: ["Roselia"],
-      },
-      {
-        eventernoteEventId: 3,
-        title: "near future",
-        eventDate: "2026-07-12",
-        venue: null,
-        attendeeCount: 8,
-        sourceUrl: "https://www.eventernote.com/events/3",
-        bandSlugs: ["mygo"],
-        bandNames: ["MyGO!!!!!"],
-      },
-    ];
-    const now = new Date("2026-07-10T12:00:00+08:00");
-    const { filteredThrough } = getRankingEventDateWindow(now);
-    const rankingIds = merged
-      .filter((event) => event.eventDate <= filteredThrough)
-      .map((event) => event.eventernoteEventId);
-    const recentIds = filterRecentEventEntries(merged, now).map((event) => event.eventernoteEventId);
-
-    expect(getRecentEventDateWindow(now)).toEqual({
-      filteredFrom: "2026-06-10",
-      filteredThrough: "2026-07-17",
-    });
-    expect(rankingIds).toEqual([2]);
-    expect(recentIds.sort()).toEqual([2, 3]);
   });
 });

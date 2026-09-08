@@ -1,6 +1,7 @@
 import { PublicHomePage } from "@/components/public-home-page";
 
 export const runtime = "nodejs";
+export const maxDuration = 180;
 
 type UserPageProps = {
   params: Promise<{ userId: string }>;

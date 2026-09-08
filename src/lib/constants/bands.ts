@@ -9,7 +9,6 @@ export type BandSeed = {
   eventernoteActorId: number | null;
   musicbrainzArtistMbid: string | null;
   supportColor: string | null;
-  aliases: string[];
   searchAliases: string[];
 };
 
@@ -25,7 +24,6 @@ export const BAND_SEEDS: BandSeed[] = [
     eventernoteActorId: null,
     musicbrainzArtistMbid: null,
     supportColor: null,
-    aliases: ["企划共通", "Project Common"],
     searchAliases: [],
   },
   {
@@ -37,7 +35,6 @@ export const BAND_SEEDS: BandSeed[] = [
     eventernoteActorId: 14234,
     musicbrainzArtistMbid: "9cacc8a5-fb40-4584-aea2-591172da6e84",
     supportColor: "#FF3377",
-    aliases: ["Poppin'Party", "Poppin&#039;Party"],
     searchAliases: ["ppp", "popipa", "ポピパ"],
   },
   {
@@ -49,7 +46,6 @@ export const BAND_SEEDS: BandSeed[] = [
     eventernoteActorId: 26775,
     musicbrainzArtistMbid: "3e0a5471-46af-4c01-bb2e-11b24c1b55fe",
     supportColor: "#EE3344",
-    aliases: ["Afterglow"],
     searchAliases: ["ag"],
   },
   {
@@ -61,7 +57,6 @@ export const BAND_SEEDS: BandSeed[] = [
     eventernoteActorId: 26774,
     musicbrainzArtistMbid: "88ad1c3e-53f2-4279-9b75-f0b5bad6a4f6",
     supportColor: "#33DDAA",
-    aliases: ["Pastel＊Palettes", "Pastel*Palettes", "Pastel✽Palettes"],
     searchAliases: ["pp"],
   },
   {
@@ -73,7 +68,6 @@ export const BAND_SEEDS: BandSeed[] = [
     eventernoteActorId: 24401,
     musicbrainzArtistMbid: "adea3c3d-a84d-4f9e-ac0b-1ef71a8947a5",
     supportColor: "#3344AA",
-    aliases: ["Roselia"],
     searchAliases: [],
   },
   {
@@ -85,7 +79,6 @@ export const BAND_SEEDS: BandSeed[] = [
     eventernoteActorId: 26659,
     musicbrainzArtistMbid: "f547cbe6-8293-4a43-800d-f641313f304f",
     supportColor: "#FFDD00",
-    aliases: ["ハロー、ハッピーワールド！", "ハロー、ハッピーワールド!", "Hello, Happy World!"],
     searchAliases: ["hhw"],
   },
   {
@@ -97,7 +90,6 @@ export const BAND_SEEDS: BandSeed[] = [
     eventernoteActorId: 39397,
     musicbrainzArtistMbid: "a94984e8-ac5a-401d-8548-0f4eb2153f28",
     supportColor: "#33CCCC",
-    aliases: ["RAISE A SUILEN", "RAISEASUILEN"],
     searchAliases: ["ras"],
   },
   {
@@ -109,7 +101,6 @@ export const BAND_SEEDS: BandSeed[] = [
     eventernoteActorId: 55819,
     musicbrainzArtistMbid: "f7b13d35-d405-4c59-8ecf-0368c8b43ddd",
     supportColor: "#33AAFF",
-    aliases: ["Morfonica", "Morƒonica"],
     searchAliases: ["monica", "モニカ"],
   },
   {
@@ -121,7 +112,6 @@ export const BAND_SEEDS: BandSeed[] = [
     eventernoteActorId: 66346,
     musicbrainzArtistMbid: "be91faa6-5277-4b73-b97c-10786db10598",
     supportColor: "#3388BB",
-    aliases: ["MyGO!!!!!"],
     searchAliases: ["mygo"],
   },
   {
@@ -133,7 +123,6 @@ export const BAND_SEEDS: BandSeed[] = [
     eventernoteActorId: 70564,
     musicbrainzArtistMbid: "3d3b99e4-1a07-49d5-9c47-cd2a4c156d6c",
     supportColor: "#881144",
-    aliases: ["Ave Mujica"],
     searchAliases: ["mujica"],
   },
   {
@@ -145,7 +134,6 @@ export const BAND_SEEDS: BandSeed[] = [
     eventernoteActorId: 75117,
     musicbrainzArtistMbid: "5304247c-e212-41cf-8121-b428ff7f7d31",
     supportColor: "#FF7788",
-    aliases: ["夢限大みゅーたいぷ", "夢限大MewType", "Mugendai Mewtype", "BDP Yumemita"],
     searchAliases: ["梦限大", "yumemita", "ゆめみた"],
   },
   {
@@ -157,7 +145,6 @@ export const BAND_SEEDS: BandSeed[] = [
     eventernoteActorId: 89847,
     musicbrainzArtistMbid: "7c3b45e4-9af0-424f-84bc-e1a61aff7a19",
     supportColor: "#AA22EE",
-    aliases: ["millsage", "みるさーじゅ"],
     searchAliases: [],
   },
   {
@@ -169,25 +156,9 @@ export const BAND_SEEDS: BandSeed[] = [
     eventernoteActorId: 89848,
     musicbrainzArtistMbid: "5ce8ca2d-7bba-4f39-80f8-8390ebddbc4d",
     supportColor: "#FFAA33",
-    aliases: ["一家Dumb Rock!", "一家Dumb Rock！", "いっかだんらん"],
     searchAliases: [],
   },
 ];
-
-const commonArtistMarkers = [
-  "シャッフルユニット",
-  "その他",
-  "Various Artists",
-  "CiRCLE THANKS PARTY! Special Band",
-];
-
-const COMMON_ARTIST_MARKERS = new Set(commonArtistMarkers.map((value) => value.toLowerCase()));
-
-export const BAND_ALIAS_TO_SLUG = new Map(
-  BAND_SEEDS.flatMap((band) =>
-    band.aliases.map((alias) => [alias.toLowerCase(), band.slug] as const),
-  ),
-);
 
 export const DEFAULT_VISIBLE_BAND_SLUGS = new Set([
   "poppin-party",
@@ -213,28 +184,4 @@ export function getBandTextColor(slug: string) {
   if (slug === "roselia") return "var(--roselia-highlight)";
   if (slug === "hello-happy-world") return "var(--hello-happy-highlight)";
   return getBandSupportColor(slug);
-}
-
-export function resolveBandSlugFromArtistLabels(labels: string[]) {
-  const matchedSlugs = new Set<string>();
-
-  for (const label of labels) {
-    const normalized = label.trim().toLowerCase();
-    const slug = BAND_ALIAS_TO_SLUG.get(normalized);
-
-    if (slug && slug !== PROJECT_COMMON_SLUG) {
-      matchedSlugs.add(slug);
-      continue;
-    }
-
-    if (COMMON_ARTIST_MARKERS.has(normalized)) {
-      return PROJECT_COMMON_SLUG;
-    }
-  }
-
-  if (matchedSlugs.size > 1) {
-    return PROJECT_COMMON_SLUG;
-  }
-
-  return matchedSlugs.size === 1 ? [...matchedSlugs][0] : null;
 }

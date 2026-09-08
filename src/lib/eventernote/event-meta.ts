@@ -138,7 +138,7 @@ export function parseEventernoteEventMetaPage(
 
 export async function fetchEventMetaFromEventernote(eventernoteEventId: number, timeoutMs = 8000) {
   const url = `${EVENTERNOTE_BASE_URL}/events/${eventernoteEventId}`;
-  const [response, rules] = await Promise.all([
+  const [html, rules] = await Promise.all([
     fetchWithTimeout(url, {
       headers: {
         "accept-language": "ja,en-US;q=0.9,en;q=0.8",
@@ -146,15 +146,15 @@ export async function fetchEventMetaFromEventernote(eventernoteEventId: number, 
       },
       next: { revalidate: 0 },
       timeoutMs,
+    }, async (response) => {
+      if (!response.ok) {
+        throw new Error(`无法读取 Eventernote 活动页面（HTTP ${response.status}）`);
+      }
+      return response.text();
     }),
     readEventVisibilityRules(),
   ]);
 
-  if (!response.ok) {
-    throw new Error(`无法读取 Eventernote 活动页面（HTTP ${response.status}）`);
-  }
-
-  const html = await response.text();
   return parseEventernoteEventMetaPage(
     html,
     eventernoteEventId,

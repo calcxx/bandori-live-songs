@@ -1,63 +1,51 @@
-import { inArray, isNotNull, isNull } from "drizzle-orm";
+import { eq, exists, inArray, isNull, ne, or } from "drizzle-orm";
 import { getDb } from "@/lib/db/core";
 import { songs, setlistEntries } from "@/lib/db/schema";
+import { buildUniqueSongTitleMap } from "@/lib/music/song-lookup";
 import { normalizeSongTitle } from "@/lib/music/title-utils";
 
-export async function refreshSongLiveState(db = getDb()) {
-  const [songRows, distinctSetlistRows, linkedSongRows] = await Promise.all([
-    db.select({ id: songs.id, title: songs.title }).from(songs),
-    db
-      .selectDistinct({ rawTitle: setlistEntries.rawTitle })
-      .from(setlistEntries)
-      .where(isNull(setlistEntries.songId)),
-    db
-      .selectDistinct({ songId: setlistEntries.songId })
-      .from(setlistEntries)
-      .where(isNotNull(setlistEntries.songId)),
-  ]);
+type LiveStateDatabase = Pick<ReturnType<typeof getDb>, "select" | "selectDistinct" | "update">;
 
-  const playedSongTitleSet = new Set(distinctSetlistRows.map((row) => row.rawTitle));
-  const playedSongNormalizedTitleSet = new Set(distinctSetlistRows.map((row) => normalizeSongTitle(row.rawTitle)));
-  const normalizedSongOwners = new Map<string, number | null>();
+export async function refreshSongLiveState(db: LiveStateDatabase = getDb()) {
+  const distinctSetlistRows = await db
+    .selectDistinct({ rawTitle: setlistEntries.rawTitle })
+    .from(setlistEntries)
+    .where(isNull(setlistEntries.songId));
+  const fallbackSongIds: number[] = [];
 
-  for (const song of songRows) {
-    const normalizedTitle = normalizeSongTitle(song.title);
-    const existing = normalizedSongOwners.get(normalizedTitle);
+  // Current imports link song IDs. Only load and normalize the catalog for legacy entries.
+  if (distinctSetlistRows.length > 0) {
+    const songRows = await db.select({ id: songs.id, title: songs.title }).from(songs);
+    const playedSongTitleSet = new Set(distinctSetlistRows.map((row) => row.rawTitle));
+    const playedSongNormalizedTitleSet = new Set(distinctSetlistRows.map((row) => normalizeSongTitle(row.rawTitle)));
+    const normalizedSongOwners = buildUniqueSongTitleMap(
+      songRows,
+      (song) => normalizeSongTitle(song.title),
+    );
 
-    if (existing === undefined) {
-      normalizedSongOwners.set(normalizedTitle, song.id);
-      continue;
-    }
+    for (const song of songRows) {
+      const normalizedTitle = normalizeSongTitle(song.title);
+      const matchedByExactTitle = playedSongTitleSet.has(song.title);
+      const matchedByNormalizedTitle =
+        normalizedSongOwners.get(normalizedTitle)?.id === song.id && playedSongNormalizedTitleSet.has(normalizedTitle);
 
-    if (existing !== song.id) {
-      normalizedSongOwners.set(normalizedTitle, null);
+      if (matchedByExactTitle || matchedByNormalizedTitle) {
+        fallbackSongIds.push(song.id);
+      }
     }
   }
 
-  const nextPlayedSongIds = new Set<number>(
-    linkedSongRows.flatMap((row) => (row.songId ? [row.songId] : [])),
+  const linked = exists(
+    db.select({ songId: setlistEntries.songId })
+      .from(setlistEntries)
+      .where(eq(setlistEntries.songId, songs.id)),
   );
+  const played = fallbackSongIds.length > 0
+    ? or(linked, inArray(songs.id, fallbackSongIds))!
+    : linked;
 
-  for (const song of songRows) {
-    const normalizedTitle = normalizeSongTitle(song.title);
-    const matchedByExactTitle = playedSongTitleSet.has(song.title);
-    const matchedByNormalizedTitle =
-      normalizedSongOwners.get(normalizedTitle) === song.id && playedSongNormalizedTitleSet.has(normalizedTitle);
-
-    if (matchedByExactTitle || matchedByNormalizedTitle) {
-      nextPlayedSongIds.add(song.id);
-    }
-  }
-
-  await db.update(songs).set({
-    hasBeenPlayedLive: false,
-    updatedAt: new Date(),
-  });
-
-  if (nextPlayedSongIds.size > 0) {
-    await db
-      .update(songs)
-      .set({ hasBeenPlayedLive: true, updatedAt: new Date() })
-      .where(inArray(songs.id, [...nextPlayedSongIds]));
-  }
+  // Apply one atomic transition, leaving unchanged rows and timestamps untouched.
+  await db.update(songs)
+    .set({ hasBeenPlayedLive: played, updatedAt: new Date() })
+    .where(ne(songs.hasBeenPlayedLive, played));
 }

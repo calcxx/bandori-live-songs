@@ -1,4 +1,4 @@
-import { getPublicApiSnapshot } from "@/lib/public-api/data";
+import { getPublicApiCatalog } from "@/lib/public-api/data";
 import {
   publicApiInvalidParameterResponse,
   publicApiJsonResponse,
@@ -9,8 +9,8 @@ export const runtime = "nodejs";
 
 async function handle(request: Request) {
   try {
-    const snapshot = await getPublicApiSnapshot();
-    return publicApiJsonResponse(request, { data: snapshot.bands });
+    const catalog = await getPublicApiCatalog();
+    return publicApiJsonResponse(request, { data: catalog.bands });
   } catch (error) {
     return publicApiInvalidParameterResponse(request, error);
   }
