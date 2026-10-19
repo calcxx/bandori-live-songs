@@ -19,13 +19,16 @@ async function fetchMergedActorEvents() {
   const allEntries = [];
 
   for (const [index, band] of bandSeeds.entries()) {
-    const result = await fetchAllActorEvents(band.eventernoteActorId!, {
-      slug: band.slug,
-      nameJa: band.nameJa,
-    });
-    allEntries.push(...result.events);
+    const actorIds = new Set([band.eventernoteActorId!, ...(band.additionalEventernoteActorIds ?? [])]);
+    for (const actorId of actorIds) {
+      const result = await fetchAllActorEvents(actorId, {
+        slug: band.slug,
+        nameJa: band.nameJa,
+      });
+      allEntries.push(...result.events);
+      await delay(500);
+    }
     console.info(`[event-ranking] fetched ${index + 1}/${bandSeeds.length} bands: ${band.nameJa}`);
-    await delay(500);
   }
 
   return {
@@ -46,7 +49,7 @@ function sanitizeActorEventTitles(
   }));
 }
 
-/** One complete crawl: synchronize bandori_event_index with actor pages. */
+/** One complete crawl: synchronize bandori_event_index with actor pages and additional actor sources. */
 export async function refreshBandoriActorEvents(): Promise<BandoriActorEventsRefreshResult> {
   const { mergedEvents } = await fetchMergedActorEvents();
   const db = getDb();

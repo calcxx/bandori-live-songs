@@ -220,7 +220,7 @@ export function ResultsClient({
       </div>
 
       <div className="pt-2">
-        <SaveImageButton userId={userId} copy={localeCopy} />
+        <SaveImageButton targetId="export-capture" fileLabel={userId} copy={localeCopy} />
       </div>
 
       {/* Events section */}

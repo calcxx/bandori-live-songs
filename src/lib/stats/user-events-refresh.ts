@@ -6,7 +6,11 @@ import { sql } from "drizzle-orm";
 import type { z } from "zod";
 import { getDb } from "@/lib/db/core";
 import { eventernoteUserCache } from "@/lib/db/schema";
-import { EventernoteUserNotFoundError, fetchAllUserEvents } from "@/lib/eventernote/client";
+import {
+  EventernoteUserNotFoundError,
+  fetchAllUserEvents,
+  type EventernoteUserEventsSummary,
+} from "@/lib/eventernote/client";
 import {
   type cachePayloadSchema,
   persistFetchedUserEventsCache,
@@ -38,9 +42,13 @@ async function fetchAndPersistUserEvents(
   requestedUserId: string,
   cacheUserId: string,
   db = getDb(),
+  summary?: EventernoteUserEventsSummary,
 ): Promise<RefreshUserEventsResult> {
   try {
-    const remote = await fetchAllUserEvents(requestedUserId);
+    const remote = await fetchAllUserEvents(
+      requestedUserId,
+      summary ? { summary } : undefined,
+    );
     const persisted = await persistFetchedUserEventsCache(cacheUserId, remote, db);
 
     return {
@@ -75,14 +83,19 @@ async function fetchAndPersistUserEvents(
   }
 }
 
-export function refreshCachedUserEventsDeduped(requestedUserId: string, cacheUserId: string, db = getDb()) {
+export function refreshCachedUserEventsDeduped(
+  requestedUserId: string,
+  cacheUserId: string,
+  db = getDb(),
+  summary?: EventernoteUserEventsSummary,
+) {
   const inFlight = inFlightUserRefreshes.get(cacheUserId);
   if (inFlight) {
     return inFlight;
   }
 
   // Reuse one in-flight refresh per user in a single runtime instance.
-  const refreshPromise = fetchAndPersistUserEvents(requestedUserId, cacheUserId, db).finally(() => {
+  const refreshPromise = fetchAndPersistUserEvents(requestedUserId, cacheUserId, db, summary).finally(() => {
     if (inFlightUserRefreshes.get(cacheUserId) === refreshPromise) {
       inFlightUserRefreshes.delete(cacheUserId);
     }
@@ -92,7 +105,12 @@ export function refreshCachedUserEventsDeduped(requestedUserId: string, cacheUse
   return refreshPromise;
 }
 
-export function scheduleUserEventsRefresh(requestedUserId: string, cacheUserId: string, displayUserId: string) {
+export function scheduleUserEventsRefresh(
+  requestedUserId: string,
+  cacheUserId: string,
+  displayUserId: string,
+  summary?: EventernoteUserEventsSummary,
+) {
   after(async () => {
     const db = getDb();
     const leaseAcquired = await tryAcquireUserEventsRefreshLease(cacheUserId, displayUserId, db);
@@ -101,7 +119,7 @@ export function scheduleUserEventsRefresh(requestedUserId: string, cacheUserId: 
       return;
     }
 
-    await refreshCachedUserEventsDeduped(requestedUserId, cacheUserId, db);
+    await refreshCachedUserEventsDeduped(requestedUserId, cacheUserId, db, summary);
   });
 }
 
@@ -134,6 +152,7 @@ export async function refreshUserEventsInline({
   waitTimeoutMs,
   waitIntervalMs,
   db,
+  summary,
 }: {
   requestedUserId: string;
   cacheUserId: string;
@@ -141,11 +160,12 @@ export async function refreshUserEventsInline({
   waitTimeoutMs: number;
   waitIntervalMs: number;
   db: ReturnType<typeof getDb>;
+  summary?: EventernoteUserEventsSummary;
 }) {
   const leaseAcquired = await tryAcquireUserEventsRefreshLease(cacheUserId, displayUserId, db);
 
   if (leaseAcquired) {
-    return refreshCachedUserEventsDeduped(requestedUserId, cacheUserId, db);
+    return refreshCachedUserEventsDeduped(requestedUserId, cacheUserId, db, summary);
   }
 
   await waitForUserEventsRefresh(cacheUserId, waitTimeoutMs, waitIntervalMs, db);

@@ -14,7 +14,7 @@
 - 展示独立的歌曲演出统计页与版本化开放 API
 - 区分原创曲、翻唱曲和企划共通歌曲，Setlist 条目绑定歌曲 ID
 - 支持简体中文、繁体中文、日语和英语
-- 支持浅色、深色、跟随系统主题以及 JPEG 统计图导出
+- 支持浅色、深色、跟随系统主题，以及用户统计和单场歌单的 JPEG 导出
 - 可通过 MusicBrainz 定时补充新曲并修正更早的发售日期
 
 ## 2. 技术栈
@@ -24,7 +24,7 @@
 | 框架     | Next.js 16 (App Router, RSC)        |
 | 语言     | TypeScript 5                        |
 | UI       | React 19 + Tailwind CSS 4           |
-| 数据库   | Supabase Postgres (via Drizzle ORM) |
+| 数据库   | PostgreSQL (via Drizzle ORM)        |
 | 爬虫解析 | Cheerio                             |
 | 数据校验 | Zod 4                               |
 | 测试     | Vitest (单元) + Playwright (E2E)    |
@@ -40,7 +40,9 @@ bdr-events-to-songs/
 │   ├── data/                   # 静态 JSON 数据
 │   └── lib/                    # 核心业务逻辑
 ├── scripts/                    # 离线数据管理脚本
-├── tests/                      # 单元测试
+├── tests/                      # 单元与模块协作测试
+├── e2e/                        # Playwright 浏览器测试
+├── docs/                       # 部署与测试文档
 ├── drizzle.config.ts           # Drizzle ORM 配置
 └── vitest.config.mts           # Vitest 配置
 ```
@@ -62,17 +64,18 @@ graph TB
     subgraph "业务逻辑层 src/lib/"
         Stats["stats/ — 统计聚合"]
         Eventernote["eventernote/ — 外部数据抓取与解析"]
-        Bandori["bandori/ — 曲目库管理"]
+        LiveSetlist["live-setlist/ — 活动检索与歌单"]
         Constants["constants/ — 乐队定义"]
         Events["events/ — 活动可见性"]
         Music["music/ — 歌曲排序与匹配"]
+        MusicBrainz["musicbrainz/ — 最近歌曲同步"]
         I18n["i18n/ — 国际化"]
         DB["db/ — 数据库"]
     end
 
     subgraph "外部数据源"
-        EN["Eventernote API"]
-        DB_Supabase["PostgreSQL"]
+        EN["Eventernote 页面 / ICS"]
+        DB_Postgres["PostgreSQL"]
     end
 
     Browser --> Pages
@@ -83,10 +86,11 @@ graph TB
     Components --> Stats
     Stats --> DB
     Stats --> Eventernote
-    Stats --> Bandori
     Stats --> Events
     Eventernote --> EN
-    DB --> DB_Supabase
+    DB --> DB_Postgres
+    Pages --> LiveSetlist
+    Stats --> MusicBrainz
 ```
 
 ## 5. 核心数据流
@@ -99,7 +103,7 @@ sequenceDiagram
     participant P as page.tsx (RSC)
     participant S as getUserSongStats
     participant EN as Eventernote 爬虫
-    participant DB as Supabase Postgres
+    participant DB as PostgreSQL
     participant C as catalog-cache
 
     U->>P: GET /?userId=xxx
@@ -109,12 +113,12 @@ sequenceDiagram
     DB-->>C: 曲目池 SongPoolItem[]
     S->>DB: SELECT eventernote_user_cache WHERE userId
     DB-->>S: 缓存行 (activities / remoteEventCount / fetchStatus)
-    S->>EN: fetchUserEventCount(userId)
-    EN-->>S: 远程活动总数（轻量请求）
+    S->>EN: fetchUserEventSummary(userId)
+    EN-->>S: 远程活动总数 + 数字用户 ID（limit=1 轻量页）
 
     alt 无缓存或需全量刷新
-        S->>EN: fetchAllUserEvents(userId)
-        EN->>EN: 分页抓取 HTML (带重试)
+        S->>EN: fetchAllUserEvents(userId, summary)
+        EN->>EN: ≤300 条优先读取 ICS，否则抓取 limit=2000 的 HTML（失败回退 30 条/页）
         EN-->>S: EventernoteEventSnapshot[]
         S->>DB: SELECT bandori_event_index WHERE eventId IN (...)
         S->>S: createBandoriUserEventSnapshots(index lookup)
@@ -164,7 +168,7 @@ app/
     └── user-cache/                   # 管理后台 — 用户缓存只读浏览
 ```
 
-**`page.tsx`** 是核心入口，采用 RSC 模式在服务端完成全部数据查询后，将结果序列化传递给客户端组件 `HomePageClient`。
+**`page.tsx`** 负责解析路径与查询参数并转交 `PublicHomePage`；后者在服务端并行预取用户统计、活动可见性规则、语言和活动列表，再把结果序列化给客户端组件 `HomePageClient`。
 
 ### 6.2 `src/components/` — UI 组件层
 
@@ -186,7 +190,7 @@ components/
 ├── public-footer.tsx                 # API 与 GitHub 链接
 ├── locale-toggle.tsx                 # 语言切换
 ├── theme-toggle.tsx                  # 主题切换
-├── save-image-button.tsx             # 导出 JPEG 图片
+├── save-image-button.tsx             # 导出用户统计 / 歌单卡片为 JPEG
 └── refresh-while-warming.tsx         # 缓存预热中的刷新组件
 ```
 
@@ -195,6 +199,7 @@ components/
 - `results-client.tsx` 负责布局组合，从 `use-results-state` Hook 获取所有派生状态
 - `BandSummaryCard` 和 `EventCard` 是纯展示组件，通过 props 接收数据
 - 状态管理集中在 `use-results-state.ts`，包含筛选、展开、歌曲事件加载等逻辑
+- 用户统计与歌单详情共用 `SaveImageButton`：前者捕获统计概览，后者捕获以活动标题开头的整张歌单卡片；导出期间隐藏带 `data-export-hidden` 的交互元素
 
 ### 6.3 `src/lib/` — 业务逻辑层
 
@@ -228,28 +233,28 @@ stats/
 
 缓存策略（**非固定时间 TTL**；`expires_at` 列保留但当前写入为 `null`）：
 
-- 每次查询先轻量请求 Eventernote 用户活动页，解析**远程活动总数** `remoteEventCount`，与库中 `eventernote_user_cache.remote_event_count` 比对。
+- 缓存命中时先请求 `?limit=1` 的 Eventernote 用户活动页，解析**远程活动总数** `remoteEventCount` 和公开资料中的数字用户 ID；该摘要会传入后台刷新，避免再次请求计数页。缓存缺失时直接进入全量抓取，不额外请求计数页。
 - **总数相同且距上次抓取不足 1 天**：视为缓存仍有效，直接返回已存 `activities`。
 - **总数相同但距上次抓取超过 1 天**：立即返回旧 `activities`，并静默后台全量刷新。
-- **总数不同**：立即返回旧 `activities`（`staleCacheUsed: true`），并后台触发全量分页抓取更新缓存（stale-while-revalidate）。
+- **总数不同**：立即返回旧 `activities`（`staleCacheUsed: true`），并后台触发全量抓取更新缓存（stale-while-revalidate）。
 - **无缓存行**：返回 warming，执行全量抓取初始化。
 - **无法取得远程总数**（站点异常等）：不触发刷新，尽量返回已有缓存。
 - 管理页 `/admin/user-cache` 可只读浏览缓存行（用户名 / 昵称 / 抓取状态 / 时间 / 远程活动数）。
 - **解析器版本**（`parserVersion`）升级时：同步全量刷新。
 - **用户手动刷新**（`?refresh=1` 或 `awaitFreshAfter`）：按 inline/background 模式强制刷新。
 - 使用数据库行级租约（`refreshingStartedAt`，5 分钟）与进程内去重，防止同一用户并发全量抓取。
-- 完整活动抓取根据第一页解析出的总页数动态放宽总超时：单页仍限制为 10 秒，整次最多 120 秒；
-  用户页面的函数执行上限为 180 秒，为大活动量用户的缓存写入留出余量。
+- 活动数不超过 300 时优先读取公开 ICS 日历（15 秒超时）；超过 300 时请求 `limit=2000` 的用户活动页（20 秒超时），失败回退到 30 条/页（10 秒超时）。完整抓取根据页数动态放宽总超时，最多 120 秒；用户页面的函数执行上限为 180 秒。
 
 #### 6.3.2 `eventernote/` — Eventernote 爬虫
 
 ```
 eventernote/
-├── client.ts                # HTTP 客户端：分页抓取、重试、超时
-├── parser.ts                # 纯 HTML 解析（Cheerio）：可独立测试
+├── client.ts                # HTTP 客户端：计数、ICS、分页抓取、重试、超时
+├── parser.ts                # 纯 HTML 解析（Cheerio）：用户页、数字用户 ID
+├── calendar-ics.ts          # 公开 ICS 日历解析（纯函数）
 ├── bandori-user-events.ts   # 用户活动 eventId × 索引 → 乐队匹配
 ├── bandori-event-index.ts   # bandori_event_index 读写
-├── actor-events.ts          # 演员活动查询
+├── actor-events.ts          # 演员活动查询（limit=1000）
 ├── event-meta.ts            # 活动元数据
 ├── event-ranking-snapshot.ts # 演员页抓取 → upsert bandori_event_index
 ├── match-rules.ts           # 活动日期可见性规则
@@ -259,23 +264,38 @@ eventernote/
 数据流：
 
 ```
-用户活动页 HTML → parser/client → eventIds
+用户活动页 limit=1 → 远程总数 + 数字用户 ID
+总数 ≤300 → 公开 ICS 日历；否则 limit=2000 HTML（失败回退 30 条/页）
+用户活动 → parser/client → eventIds
 演员活动页（定时刷新）→ merge → bandori_event_index
 admin list/recent → 按日期窗口查询 bandori_event_index
 eventIds ∩ index → bandori-user-events.ts（未命中丢弃；不用列表页出演者）
 ```
 
-- `parser.ts`：纯函数，接收 HTML 字符串，返回结构化数据。与 I/O 完全解耦，便于单元测试
-- `client.ts`：负责 HTTP 请求、分页调度、指数退避重试（最多 3 次）和按页数动态调整的总超时
+- `parser.ts`：纯函数，接收 HTML 字符串，返回结构化数据；同时解析公开资料中的数字用户 ID
+- `calendar-ics.ts`：解析公开用户日历，跳过取消事件和无效日期；只对活动数不超过上游 ICS 上限的用户视为完整
+- `client.ts`：负责 HTTP 请求、数据源选择、分页调度、指数退避重试（最多 3 次）和动态总超时
 - `bandori-user-events.ts`：用 `bandori_event_index`（演员页权威）按 eventId 匹配乐队；用户列表页的 `actorIds` 不参与匹配（规避 Eventernote 列表错位）
-- `bandori-event-index.ts` / cron：抓取各乐队演员页并 upsert 索引；admin 页直接按日期筛选查询该表
+- `bandori-event-index.ts` / cron：抓取各乐队演员页并 upsert 索引，演员页使用 `limit=1000` 单页请求；RAISE A SUILEN 额外抓取 THE THIRD(仮) 的演员 ID，并按活动 ID 去重合并
+- 活动索引刷新会先验证每个演员页抓取数量完整，再在单一事务中写入完整快照并删除远端已经不存在的旧记录；空快照或数量不完整时拒绝替换
 
-#### 6.3.3 `bandori/` — BanG Dream! 领域逻辑
+#### 6.3.3 `live-setlist/` — 活动检索与歌单
 
-- 曲目种子由 `music/song-seed.ts` 加载 `src/data/song-seed.json`，并用 Zod 校验结构
-- 曲目标题标准化通过 `music/title-utils.ts` 完成（NFKC 归一化、去除翻唱标记等）
-- 原创曲由歌曲种子与 MusicBrainz 维护；翻唱曲和企划共通歌曲通过 `/admin/songs-import` 维护
-- `songs.category` 区分 `original`、`cover` 和 `project-common`
+```
+live-setlist/
+├── search.ts      # 歌单详情、最近活动、历史上的今天、候选检索
+├── match.ts       # 标题、日期与乐队候选排序
+├── date.ts        # 搜索日期解析与校验
+├── series.ts      # 系列活动识别
+├── band-query.ts  # 乐队名称与别名匹配
+├── history.ts     # 搜索历史
+├── url.ts         # 站内路径与查询参数
+└── types.ts       # 共享类型
+```
+
+- 公开的 `/events`、`/events/[eventId]` 和活动搜索 API 共用这些模块；检索结果只保存在当前标签页的 `sessionStorage`。
+- 活动系列按通用标题前缀、年份和分隔符识别，不包含具体活动 ID 或巡演名称的特殊分支。
+- 歌单详情与用户统计共用图片导出组件：前者捕获整张歌单卡片，后者捕获统计概览；导出期间隐藏带 `data-export-hidden` 的交互元素。
 
 #### 6.3.4 `music/` — 歌曲工具
 
@@ -290,6 +310,9 @@ music/
 ├── setlist-text.ts          # Setlist 文本处理
 └── song-match-suggestions.ts # 歌曲匹配建议
 ```
+
+原创曲由歌曲种子与 MusicBrainz 同步维护；翻唱曲和企划共通歌曲通过 `/admin/songs-import` 维护，
+`songs.category` 区分 `original`、`cover` 和 `project-common`。
 
 #### 6.3.5 `i18n/` — 公开界面多语言
 
@@ -309,20 +332,23 @@ i18n/
 活动检索结果只保存在当前标签页的 `sessionStorage` 中；读取新版记录时会删除旧版
 `localStorage` 记录，避免不同标签页之间互相恢复活动状态。
 
-活动索引刷新会先验证每个演员页抓取数量完整，再在单一事务中写入完整快照并删除远端
-已经不存在的旧记录。空快照或数量不完整时拒绝替换，且不附加按具体活动 ID 维护的覆盖项。
-
 #### 6.3.6 `musicbrainz/` — 最近歌曲同步
 
-`recent-songs-sync.ts` 按乐队 MusicBrainz ID 查询最近 7 天的 recording：
+`recent-songs-sync.ts` 按乐队 MusicBrainz ID 查询最近 30 天（含未来已登记日期）的 recording：
 
-- 过滤视频、不完整日期、排除曲目与重复标题
-- 插入尚不存在的新歌
-- 仅当远端日期更早时更新已有歌曲发售日
-- 每次请求之间限速，并对超时和临时错误进行重试
-- 写入后失效曲库缓存，使新数据无需重启即可生效
+- 过滤视频、无效或不完整日期、排除曲目、重复标题，以及标题/注释/发行名中标注的翻唱
+- 对尚未入库的候选录音额外读取作品关系，命中 `cover` 属性的翻唱曲一并跳过
+- 插入尚不存在的新歌；仅当远端日期更早时更新已有原创曲的发售日
+- 每次请求之间限速，并对超时和临时错误进行重试；cron 默认使用 240 秒抓取预算，手动补录脚本使用 15 分钟
+- 写入后失效曲库与开放 API 缓存，使新数据无需重启即可生效
+- 任一步失败仍会保存已成功写入的数据，并让 cron 返回 502 以便调度器告警
 
-`GET /api/cron/songs-sync` 使用与活动索引定时任务相同的 `CRON_SECRET` 鉴权。
+`GET /api/cron/songs-sync` 使用与活动索引定时任务相同的 `CRON_SECRET` 鉴权，接口执行上限为 300 秒。需要补录历史窗口时，可先预览再写入：
+
+```bash
+npx tsx scripts/sync-recent-songs.ts --since=YYYY-MM-DD
+npx tsx scripts/sync-recent-songs.ts --since=YYYY-MM-DD --apply
+```
 
 #### 6.3.7 `db/` — 数据库
 
@@ -403,7 +429,7 @@ data/
 └── event-visibility-rules.json      # 空活动规则模板
 ```
 
-开源仓库不附带生产歌曲、活动、Setlist 或按活动 ID 定制的屏蔽数据。乐队 slug、显示名称、
+开源仓库不附带生产歌曲、活动、Setlist、用户反馈或缓存导出数据，也不包含按活动 ID 定制的屏蔽数据。乐队 slug、显示名称、
 颜色、公开外部服务标识及通用乐队搜索别名属于应用运行所需的领域配置。活动系列识别使用
 通用标题前缀和年份规则，不包含针对具体活动 ID 或巡演名称的特殊分支。
 
@@ -419,7 +445,8 @@ scripts/
 ├── backfill-event-meta.ts                 # 回填活动元数据
 ├── backfill-eventernote-user-profiles.ts  # 回填用户档案
 ├── cleanup-event-title-tags.ts            # 清理活动标题标签
-└── cleanup-song-references.ts             # 校正歌曲引用并清理未引用翻唱（默认 dry-run）
+├── cleanup-song-references.ts             # 校正歌曲引用并清理未引用翻唱（默认 dry-run）
+└── sync-recent-songs.ts                   # 手动补录 MusicBrainz 最近歌曲（默认预览，--apply 写入）
 ```
 
 ## 7. 测试结构
@@ -427,18 +454,22 @@ scripts/
 ```
 tests/
 ├── aggregate.test.ts                    # 统计聚合逻辑
+├── additional-actor-events.test.ts      # 附加演员来源与索引合并
 ├── bandori-user-event-cache.test.ts     # 用户活动缓存
 ├── event-match-rules.test.ts            # 活动匹配规则
 ├── event-ranking-snapshot.test.ts       # 索引刷新窗口 / 排序
 ├── event-visibility.test.ts             # 活动可见性过滤
-├── eventernote-actor-events.test.ts     # 演员活动
+├── eventernote-actor-events.test.ts     # 演员活动与 limit=1000 单页
+├── eventernote-calendar.test.ts         # 数字用户 ID、ICS 解析与抓取回退
 ├── eventernote-cache-policy.test.ts     # 缓存策略
 ├── eventernote-event-meta.test.ts       # 活动元数据
 ├── eventernote-user-id.test.ts          # 用户 ID 校验
-├── eventernote.test.ts                  # Eventernote 页面解析
+├── eventernote.test.ts                  # Eventernote 页面解析与超时预算
 ├── manual-refresh-navigation.test.ts    # 手动刷新导航
 ├── i18n.test.ts                         # 语言解析与文案完整性
 ├── musicbrainz-recent-songs-sync.test.ts # 最近歌曲过滤与同步
+├── musicbrainz-sync-network.test.ts     # MusicBrainz 分页、重试与作品关系
+├── songs-sync-route.test.ts             # 歌曲同步 cron 鉴权与失败状态
 ├── live-search-history.test.ts          # 活动搜索历史
 ├── public-api-pagination.test.ts        # 开放 API 分页
 ├── song-resolution.test.ts              # Setlist 歌曲解析
@@ -450,10 +481,11 @@ tests/
 
 测试覆盖核心业务逻辑，重点测试：
 
-- HTML 解析（传入真实 HTML 片段，无需 mock HTTP）
+- HTML 解析与 ICS 解析（传入真实片段，无需 mock HTTP）
 - 数据聚合（纯函数，输入输出确定性）
 - 缓存策略（活动数比对、租约机制）
 - 活动匹配与可见性规则
+- 外部服务失败、分页截断与超时预算
 
 ## 8. 关键设计决策
 
@@ -468,7 +500,7 @@ graph LR
     subgraph "缓存层级"
         L1["Next.js unstable_cache<br/>曲目库 5min / 匹配结果 5min"]
         L2["Postgres eventernote_user_cache<br/>活动数变化或超过 1 天静默刷新"]
-        L3["Static JSON (src/data/)<br/>曲目库快照"]
+        L3["Static JSON (src/data/)<br/>初始化种子 / 规则模板"]
     end
 
     subgraph "刷新策略"
@@ -492,10 +524,10 @@ graph LR
 
 ### 8.3 Parser 与 I/O 分离
 
-`eventernote/parser.ts` 是纯函数模块，只接收 HTML 字符串，返回结构化数据。这使得：
+`eventernote/parser.ts` 和 `eventernote/calendar-ics.ts` 是纯函数模块，只接收上游文本，返回结构化数据。这使得：
 
-- 单元测试只需传入 HTML 片段，无需 mock HTTP
-- `client.ts` 专注于 HTTP 逻辑（分页、重试、超时）
+- 单元测试只需传入 HTML / ICS 片段，无需 mock HTTP
+- `client.ts` 专注于 HTTP 逻辑（数据源选择、分页、重试、超时）
 - 解析器升级时只需 bump `parserVersion`，触发缓存自动刷新
 
 日期字段统一通过 `src/lib/calendar-date.ts` 做真实日历校验；后台歌曲表单字段集中由
@@ -546,6 +578,6 @@ graph TB
 ```
 
 - API 路由和页面使用 `runtime = "nodejs"`（Cheerio 需要 Node 环境）
-- 通过外部调度器每日调用 `/api/cron/event-ranking` 刷新活动索引
-- 可每日调用 `/api/cron/songs-sync` 同步 MusicBrainz 最近歌曲
-- 静态数据（`src/data/`）随代码部署，需通过脚本手动更新
+- 通过外部调度器每日调用 `/api/cron/event-ranking` 刷新活动索引（演员页 `limit=1000`）
+- 可每日调用 `/api/cron/songs-sync` 同步 MusicBrainz 最近 30 天歌曲；接口上限 300 秒，部分失败返回 502
+- 静态数据（`src/data/`）随代码部署，仅用于初始化，需通过管理后台或脚本维护运行数据

@@ -465,11 +465,12 @@ describe("getEventernoteTotalTimeoutMs", () => {
   });
 
   it("scales the budget with pagination batches", () => {
-    expect(getEventernoteTotalTimeoutMs(10)).toBe(45000);
-    expect(getEventernoteTotalTimeoutMs(32)).toBe(95000);
+    expect(getEventernoteTotalTimeoutMs(2)).toBe(45000);
+    expect(getEventernoteTotalTimeoutMs(10)).toBe(85000);
   });
 
   it("caps the budget for unusually large users", () => {
+    expect(getEventernoteTotalTimeoutMs(32)).toBe(120000);
     expect(getEventernoteTotalTimeoutMs(100)).toBe(120000);
   });
 });

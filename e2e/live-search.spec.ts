@@ -55,6 +55,28 @@ test("searches, opens a setlist, preserves it across tabs, and clears the search
   expect(pageErrors).toEqual([]);
 });
 
+test("saves the opened setlist card as an image", async ({ page }) => {
+  await page.route("**/api/live-setlists?*", route => {
+    const params = new URL(route.request().url()).searchParams;
+    if (params.has("eventernoteEventId")) {
+      return route.fulfill({ json: { live } });
+    }
+    return route.fulfill({ json: params.has("q") ? { candidates: [live] } : { events: [] } });
+  });
+  await page.goto("/");
+  await page.getByRole("radio", { name: "活动", exact: true }).click();
+  await page.getByRole("searchbox", { name: "活动标题或日期" }).fill("回归测试");
+  await page.getByRole("list", { name: "活动搜索候选" }).getByRole("button").click();
+  await expect(page.getByText("Fixture Song", { exact: true })).toBeVisible();
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "保存为图片" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(
+    /^bdrsongs-setlist-900000001-\d{8}\.jpg$/,
+  );
+});
+
 test("recovers from a failed candidate request on the next search", async ({ page }) => {
   await page.route("**/api/live-setlists?*", route => {
     const params = new URL(route.request().url()).searchParams;

@@ -18,17 +18,17 @@ BanG Dream! 现场、各乐队原创曲听歌进度，以及尚未在现场听�
 - 曲库支持原创曲、翻唱曲与企划共通歌曲，Setlist 条目绑定明确的歌曲记录
 - 通过 Eventernote 演员页活动索引识别活动归属，减少列表页出演者错位影响
 - 支持简体中文、繁体中文、日语和英语
-- 支持浅色、深色及跟随系统主题，并可将统计结果导出为 JPEG
+- 支持浅色、深色及跟随系统主题，并可将用户统计或单场歌单保存为 JPEG
 - Eventernote 用户数据使用数据库缓存，并在过期时后台静默刷新
 - 管理后台支持活动浏览、Setlist/歌曲导入与编辑、持久化列表筛选、屏蔽规则及用户缓存查看
-- 可选的每日 MusicBrainz 同步会补充新歌并修正更早的发售日期
+- 可选的每日 MusicBrainz 同步会以最近 30 天为窗口补充新歌并修正更早的发售日期
 - 提供带 OpenAPI 规范的版本化公开数据 API
 
 ## 工作原理
 
 ```mermaid
 flowchart LR
-  EN["Eventernote<br/>用户活动"] --> App["Next.js 应用"]
+  EN["Eventernote<br/>用户活动 / ICS"] --> App["Next.js 应用"]
   Index["演员页活动索引"] --> App
   DB[("PostgreSQL<br/>曲库 + Setlist")] --> App
   MB["MusicBrainz<br/>可选定时同步"] --> DB
@@ -41,7 +41,7 @@ Setlist。只有已收录 Setlist 的活动才会计入「听过」，听歌覆�
 详细设计见
 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
-开源仓库不附带生产歌曲、活动或 Setlist 数据。初始化后的曲库与活动规则为空，需通过管理后台
+开源仓库不附带生产歌曲、活动或 Setlist 数据，也不包含用户反馈、缓存导出或按活动 ID 定制的屏蔽数据。初始化后的曲库与活动规则为空，需通过管理后台
 或自行准备的数据导入流程填充；乐队及外部服务标识作为应用运行所需的公开领域配置保留。
 
 ## 开放 API
@@ -83,6 +83,8 @@ npm run check
 npm run build
 npm run test:e2e
 ```
+
+测试分层与运行边界见 [docs/testing.md](docs/testing.md)。
 
 ## 你也许感兴趣的项目
 

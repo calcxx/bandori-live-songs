@@ -7,6 +7,7 @@ export type BandSeed = {
   displayOrder: number;
   groupType: BandGroupType;
   eventernoteActorId: number | null;
+  additionalEventernoteActorIds?: number[];
   musicbrainzArtistMbid: string | null;
   supportColor: string | null;
   searchAliases: string[];
@@ -88,6 +89,8 @@ export const BAND_SEEDS: BandSeed[] = [
     displayOrder: 6,
     groupType: "band",
     eventernoteActorId: 39397,
+    // THE THIRD(仮) events belong to RAISE A SUILEN.
+    additionalEventernoteActorIds: [34386],
     musicbrainzArtistMbid: "a94984e8-ac5a-401d-8548-0f4eb2153f28",
     supportColor: "#33CCCC",
     searchAliases: ["ras"],

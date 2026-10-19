@@ -6,7 +6,11 @@ import type { z } from "zod";
 
 import { getDb } from "@/lib/db/core";
 import { eventernoteUserCache } from "@/lib/db/schema";
-import { eventernoteUserEventsParserVersion, fetchUserEventCount } from "@/lib/eventernote/client";
+import {
+  eventernoteUserEventsParserVersion,
+  fetchUserEventSummary,
+  type EventernoteUserEventsSummary,
+} from "@/lib/eventernote/client";
 import { cachePayloadSchema, refreshLeaseMs } from "./user-events-cache-store";
 import {
   refreshCachedUserEventsDeduped,
@@ -165,13 +169,14 @@ export async function getUserSongStats(
     ? null
     : cacheRow;
 
-  // Cache misses already need the complete first page, so a separate count
-  // request would fetch the same Eventernote page twice. Existing transient
-  // failures also retry the complete fetch directly.
-  const remoteEventCount =
-    cacheRowForDisposition && !isKnownMissingUser && !needsParserUpgrade
-      ? await fetchUserEventCount(requestedUserId)
-      : null;
+  // Cache misses schedule a full refresh directly. Existing rows use a
+  // lightweight limit=1 page to obtain the count and public numeric user ID,
+  // then pass that summary into the refresh to avoid fetching it twice.
+  let summary: EventernoteUserEventsSummary | null = null;
+  if (cacheRowForDisposition && !isKnownMissingUser && !needsParserUpgrade) {
+    summary = await fetchUserEventSummary(requestedUserId).catch(() => null);
+  }
+  const remoteEventCount = summary?.totalCount ?? null;
 
   const cacheDisposition = getEventernoteCacheDisposition(
     cacheRowForDisposition,
@@ -222,6 +227,7 @@ export async function getUserSongStats(
       waitTimeoutMs: refreshWaitTimeoutMs,
       waitIntervalMs: refreshWaitIntervalMs,
       db,
+      summary: summary ?? undefined,
     });
 
     if (refreshResult === null) {
@@ -260,7 +266,7 @@ export async function getUserSongStats(
       return refreshInlineOrWait();
     }
 
-    scheduleUserEventsRefresh(requestedUserId, refreshCacheUserId, displayUserId);
+    scheduleUserEventsRefresh(requestedUserId, refreshCacheUserId, displayUserId, summary ?? undefined);
 
     return {
       state: "warming",
@@ -271,7 +277,7 @@ export async function getUserSongStats(
   }
 
   if (needsParserUpgrade) {
-    const refreshResult = await refreshCachedUserEventsDeduped(requestedUserId, refreshCacheUserId, db);
+    const refreshResult = await refreshCachedUserEventsDeduped(requestedUserId, refreshCacheUserId, db, summary ?? undefined);
 
     if (refreshResult.status === "not-found") {
       return {
@@ -302,7 +308,7 @@ export async function getUserSongStats(
       return refreshInlineOrWait();
     }
 
-    scheduleUserEventsRefresh(requestedUserId, refreshCacheUserId, displayUserId);
+    scheduleUserEventsRefresh(requestedUserId, refreshCacheUserId, displayUserId, summary ?? undefined);
 
     return {
       state: "warming",
@@ -317,7 +323,7 @@ export async function getUserSongStats(
       return refreshInlineOrWait();
     }
 
-    scheduleUserEventsRefresh(requestedUserId, refreshCacheUserId, displayUserId);
+    scheduleUserEventsRefresh(requestedUserId, refreshCacheUserId, displayUserId, summary ?? undefined);
 
     return {
       state: "warming",
@@ -328,7 +334,7 @@ export async function getUserSongStats(
   }
 
   if (cacheDisposition.mode === "serve-stale-and-refresh") {
-    scheduleUserEventsRefresh(requestedUserId, refreshCacheUserId, displayUserId);
+    scheduleUserEventsRefresh(requestedUserId, refreshCacheUserId, displayUserId, summary ?? undefined);
 
     return buildOkResult({
       cacheKeyTime: cacheRow!.lastFetchedAt.getTime(),

@@ -149,6 +149,63 @@ export function parseEventernoteUserEventsPage(html: string) {
   } satisfies ParsedEventernotePage;
 }
 
+function parseNumericUserIdCandidate(value: string | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const match = value.match(/(?:add|remove)Follow\((\d+)\)/u);
+  if (!match) {
+    return null;
+  }
+
+  const numericUserId = Number(match[1]);
+  return Number.isSafeInteger(numericUserId) && numericUserId > 0
+    ? numericUserId
+    : null;
+}
+
+function parseAvatarUserIdCandidate(value: string | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const match = value.match(/\/images\/users\/(\d+)\//u);
+  if (!match) {
+    return null;
+  }
+
+  const numericUserId = Number(match[1]);
+  return Number.isSafeInteger(numericUserId) && numericUserId > 0
+    ? numericUserId
+    : null;
+}
+
+/**
+ * The public profile does not expose a dedicated user-id field. The follow
+ * button is the most reliable source; the avatar path is a fallback for
+ * profiles that no longer render the follow control.
+ */
+export function parseEventernoteUserNumericId(html: string): number | null {
+  const $ = load(html);
+  const followHref =
+    $(".gb_users_side_profile .follow_btn").first().attr("href") ??
+    $(".follow_btn").first().attr("href");
+  const avatarSrc = $(".gb_users_side_profile .thumb img").first().attr("src");
+
+  const candidates = [
+    parseNumericUserIdCandidate(followHref),
+    parseAvatarUserIdCandidate(avatarSrc),
+  ].filter((value): value is number => value !== null);
+
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  const uniqueCandidates = [...new Set(candidates)];
+  return uniqueCandidates.length === 1 ? uniqueCandidates[0] : null;
+}
+
 export function parseEventernoteUserProfilePage(html: string): EventernoteUserProfile & { missingUser: boolean } {
   const $ = load(html);
   const missingUser =

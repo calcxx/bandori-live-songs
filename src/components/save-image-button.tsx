@@ -5,7 +5,15 @@ import { CameraIcon, CheckIcon, Loader2Icon } from "lucide-react";
 import { useRef, useState } from "react";
 import type { CopyDefinition } from "@/lib/i18n";
 
-export function SaveImageButton({ userId, copy: localeCopy }: { userId: string; copy: CopyDefinition }) {
+export function SaveImageButton({
+  targetId,
+  fileLabel,
+  copy: localeCopy,
+}: {
+  targetId: string;
+  fileLabel: string;
+  copy: CopyDefinition;
+}) {
   const [state, setState] = useState<"idle" | "capturing" | "success" | "error">("idle");
   const shareFilesSupportRef = useRef<boolean | null>(null);
 
@@ -68,7 +76,7 @@ export function SaveImageButton({ userId, copy: localeCopy }: { userId: string; 
   };
 
   const handleCapture = async () => {
-    const captureTarget = document.getElementById("export-capture");
+    const captureTarget = document.getElementById(targetId);
 
     if (!captureTarget) {
       console.error("Export capture target not found");
@@ -186,7 +194,7 @@ export function SaveImageButton({ userId, copy: localeCopy }: { userId: string; 
 
       const finalBlob = await canvasToBlob(canvas);
       const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-      const filename = `bdrsongs-${userId}-${dateStr}.jpg`;
+      const filename = `bdrsongs-${fileLabel}-${dateStr}.jpg`;
 
       // On mobile devices, prefer Web Share API for better UX
       // On desktop, always download directly

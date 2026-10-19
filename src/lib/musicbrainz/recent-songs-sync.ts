@@ -16,14 +16,16 @@ const REQUEST_DELAY_MS = 1100;
 const MAX_RETRIES = 3;
 const RETRY_BASE_DELAY_MS = 2000;
 const FETCH_TIMEOUT_MS = 15000;
-const LOOKBACK_DAYS = 7;
+const LOOKBACK_DAYS = 30;
 
 export type MusicBrainzRecordingHit = {
+  recordingId?: string;
   title: string;
   firstReleaseDate?: string;
   video?: boolean;
   disambiguation?: string;
   releaseTitles?: string[];
+  coverWorkTitle?: string;
 };
 
 export type ExistingSongRef = {
@@ -106,9 +108,34 @@ function coverReleaseTitle(recording: MusicBrainzRecordingHit) {
   return recording.releaseTitles?.find(isCoverReleaseTitle) ?? null;
 }
 
+export type MusicBrainzWorkRelation = {
+  type?: string;
+  attributes?: string[];
+  "target-type"?: string;
+  work?: { title?: string };
+};
+
+/** Pure: MB marks covers on the recording→work performance relation, which search results omit. */
+export function coverWorkTitleFromRelations(relations?: MusicBrainzWorkRelation[]): string | null {
+  for (const relation of relations ?? []) {
+    if (relation["target-type"] !== "work") continue;
+    if (!(relation.attributes ?? []).includes("cover")) continue;
+    return relation.work?.title || "(untitled work)";
+  }
+  return null;
+}
+
+function coverDetail(recording: MusicBrainzRecordingHit) {
+  if (recording.coverWorkTitle) return `cover of work: ${recording.coverWorkTitle}`;
+  const coverRelease = coverReleaseTitle(recording);
+  if (coverRelease) return `cover release: ${coverRelease}`;
+  return recording.firstReleaseDate;
+}
+
 function isCoverRecording(recording: MusicBrainzRecordingHit) {
   return (
     isExcludedTrackTitle(recording.title) ||
+    recording.coverWorkTitle !== undefined ||
     /\bcovers?\b/i.test(recording.disambiguation ?? "") ||
     /カ(?:バー|ヴァー)/u.test(recording.disambiguation ?? "") ||
     coverReleaseTitle(recording) !== null
@@ -169,7 +196,6 @@ export function filterMusicBrainzRecordingsForBand(
       continue;
     }
 
-    const coverRelease = coverReleaseTitle(recording);
     if (isCoverRecording(recording)) {
       skippedExcluded += 1;
       decisions.push({
@@ -177,7 +203,7 @@ export function filterMusicBrainzRecordingsForBand(
         bandSlug,
         rawTitle: recording.title,
         reason: "excluded",
-        detail: coverRelease ? `cover release: ${coverRelease}` : recording.firstReleaseDate,
+        detail: coverDetail(recording),
       });
       continue;
     }
@@ -285,7 +311,9 @@ export function filterMusicBrainzRecordingsForBand(
 }
 
 type MusicBrainzSearchResponse = {
+  count?: number;
   recordings?: Array<{
+    id?: string;
     title: string;
     "first-release-date"?: string;
     video?: boolean;
@@ -299,30 +327,58 @@ type MusicBrainzSearchResponse = {
   }>;
 };
 
-async function searchRecentRecordingsByArtist(
+type MusicBrainzRecordingDetailResponse = {
+  relations?: MusicBrainzWorkRelation[];
+};
+
+async function requestMusicBrainzJson<T>(
+  url: string,
+  signal: AbortSignal | undefined,
+  parse: (data: unknown) => T,
+): Promise<T> {
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    signal?.throwIfAborted();
+    try {
+      const timeout = AbortSignal.timeout(FETCH_TIMEOUT_MS);
+      const response = await fetch(url, {
+        headers: { "User-Agent": USER_AGENT },
+        signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        const error = new Error(`MusicBrainz HTTP ${response.status}`);
+        if (response.status !== 429 && response.status < 500) throw Object.assign(error, { permanent: true });
+        throw error;
+      }
+      return parse(await response.json());
+    } catch (error) {
+      signal?.throwIfAborted();
+      if (attempt === MAX_RETRIES || (error as { permanent?: boolean })?.permanent) throw error;
+      await sleep(RETRY_BASE_DELAY_MS * attempt, undefined, { signal });
+    }
+  }
+  throw new Error("MusicBrainz request failed");
+}
+
+export async function searchRecentRecordingsByArtist(
   mbid: string,
   sinceDate: string,
+  signal?: AbortSignal,
 ): Promise<MusicBrainzRecordingHit[]> {
   const query = `arid:${mbid} AND firstreleasedate:[${sinceDate} TO *]`;
-  const url = `${MUSICBRAINZ_API}/recording/?query=${encodeURIComponent(query)}&fmt=json&limit=100`;
+  const hits: MusicBrainzRecordingHit[] = [];
+  let offset = 0;
 
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    const response = await fetch(url, {
-      headers: { "User-Agent": USER_AGENT },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  while (true) {
+    const url = `${MUSICBRAINZ_API}/recording/?query=${encodeURIComponent(query)}&fmt=json&limit=100&offset=${offset}`;
+    const data = await requestMusicBrainzJson<MusicBrainzSearchResponse>(url, signal, (body) => {
+      const parsed = body as MusicBrainzSearchResponse;
+      if (!Array.isArray(parsed.recordings)) throw new Error("MusicBrainz response missing recordings");
+      return parsed;
     });
-
-    if (response.status === 503) {
-      await sleep(RETRY_BASE_DELAY_MS * attempt);
-      continue;
-    }
-
-    if (!response.ok) {
-      throw new Error(`MusicBrainz HTTP ${response.status}`);
-    }
-
-    const data = (await response.json()) as MusicBrainzSearchResponse;
-    return (data.recordings ?? []).map((recording) => ({
+    const recordings = data.recordings!;
+    hits.push(...recordings.map((recording) => ({
+      recordingId: recording.id,
       title: recording.title,
       firstReleaseDate: recording["first-release-date"],
       video: recording.video,
@@ -332,14 +388,60 @@ async function searchRecentRecordingsByArtist(
           (title): title is string => Boolean(title),
         ),
       ),
-    }));
+    })));
+    offset += recordings.length;
+    if (data.count !== undefined ? offset >= data.count : recordings.length < 100) return hits;
+    if (recordings.length === 0) throw new Error("MusicBrainz pagination ended before reported count");
+    await sleep(REQUEST_DELAY_MS, undefined, { signal });
+  }
+}
+
+async function fetchCoverWorkTitle(recordingId: string, signal?: AbortSignal): Promise<string | null> {
+  const url = `${MUSICBRAINZ_API}/recording/${recordingId}?inc=work-rels&fmt=json`;
+  const data = await requestMusicBrainzJson<MusicBrainzRecordingDetailResponse>(url, signal, (body) =>
+    body as MusicBrainzRecordingDetailResponse,
+  );
+  return coverWorkTitleFromRelations(data.relations);
+}
+
+/**
+ * Search results omit work relations, so one lookup per not-yet-catalogued recording catches
+ * covers released without "cover" in their title or release names. Catalog titles stay unverified
+ * because the filter skips them as existing anyway.
+ */
+export async function flagCoverWorkRecordings(
+  recordings: MusicBrainzRecordingHit[],
+  existingByNormalized: Map<string, ExistingSongRef>,
+  signal?: AbortSignal,
+): Promise<number> {
+  const verifiedIds = new Set<string>();
+  let checked = 0;
+
+  for (const recording of recordings) {
+    const recordingId = recording.recordingId;
+    if (!recordingId || verifiedIds.has(recordingId)) continue;
+    verifiedIds.add(recordingId);
+
+    const title = canonicalizeSongTitle(recording.title);
+    if (!title || existingByNormalized.has(normalizeSongTitle(title))) continue;
+
+    signal?.throwIfAborted();
+    await sleep(REQUEST_DELAY_MS, undefined, { signal });
+    const coverWorkTitle = await fetchCoverWorkTitle(recordingId, signal);
+    checked += 1;
+    if (coverWorkTitle) {
+      recording.coverWorkTitle = coverWorkTitle;
+    }
   }
 
-  throw new Error("MusicBrainz rate-limited after retries");
+  return checked;
 }
 
 export type SyncRecentMusicBrainzSongsOptions = {
   now?: Date;
+  sinceDate?: string;
+  /** Bound upstream work so the route can still save results and report failures. */
+  fetchBudgetMs?: number;
   dryRun?: boolean;
   onBand?: (message: string) => void;
 };
@@ -351,7 +453,9 @@ export async function syncRecentMusicBrainzSongs(
   const dryRun = options.dryRun ?? false;
   const log = options.onBand ?? (() => {});
 
-  const sinceDate = lookbackSinceDate(now);
+  const sinceDate = options.sinceDate ?? lookbackSinceDate(now);
+  if (!isValidIsoDate(sinceDate)) throw new Error("sinceDate must be a valid YYYY-MM-DD date");
+  const signal = AbortSignal.timeout(options.fetchBudgetMs ?? 240_000);
   const bands = BAND_SEEDS.filter((band) => band.groupType === "band");
   const skippedBandsWithoutMbid = bands
     .filter((band) => !band.musicbrainzArtistMbid)
@@ -393,9 +497,14 @@ export async function syncRecentMusicBrainzSongs(
       continue;
     }
 
+    if (signal.aborted) {
+      errors.push(`${band.slug}: sync fetch budget exhausted; band not scanned`);
+      continue;
+    }
     scannedBands += 1;
     try {
-      const recordings = await searchRecentRecordingsByArtist(mbid, sinceDate);
+      const recordings = await searchRecentRecordingsByArtist(mbid, sinceDate, signal);
+      await flagCoverWorkRecordings(recordings, existingByNormalized, signal);
       const filtered = filterMusicBrainzRecordingsForBand(
         band.slug,
         recordings,
@@ -447,7 +556,7 @@ export async function syncRecentMusicBrainzSongs(
       log(`ERROR ${message}`);
     }
 
-    await sleep(REQUEST_DELAY_MS);
+    if (!signal.aborted) await sleep(REQUEST_DELAY_MS);
   }
 
   let inserted = 0;
@@ -473,18 +582,17 @@ export async function syncRecentMusicBrainzSongs(
         await db.insert(songs).values(values);
         inserted = values.length;
         insertedTitles.push(...values.map((song) => song.title));
-      } catch (error) {
+      } catch {
         for (const song of values) {
           try {
             await db.insert(songs).values(song);
             inserted += 1;
             insertedTitles.push(song.title);
-          } catch {
-            skippedExisting += 1;
+          } catch (insertError) {
+            const cause = insertError as { code?: string; cause?: { code?: string } };
+            if ((cause.code ?? cause.cause?.code) === "23505") skippedExisting += 1;
+            else errors.push(`insert ${song.title}: ${insertError instanceof Error ? insertError.message : String(insertError)}`);
           }
-        }
-        if (inserted === 0) {
-          errors.push(error instanceof Error ? error.message : String(error));
         }
       }
     }

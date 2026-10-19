@@ -2,7 +2,7 @@ import { revalidateTag } from "next/cache";
 import { syncRecentMusicBrainzSongs } from "@/lib/musicbrainz/recent-songs-sync";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 function isAuthorized(request: Request) {
   const secret = process.env.CRON_SECRET;
@@ -19,6 +19,7 @@ export async function GET(request: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const startedAt = Date.now();
   const dryRun = new URL(request.url).searchParams.get("dryRun") === "1";
   const logs: string[] = [];
   const result = await syncRecentMusicBrainzSongs({
@@ -35,9 +36,11 @@ export async function GET(request: Request) {
     }
   }
 
+  console.info(`[songs-sync] completed in ${Date.now() - startedAt}ms: inserted=${result.inserted} updated=${result.updated} errors=${result.errors.length}`);
+
   return Response.json({
     ok: result.errors.length === 0,
     ...result,
     logs,
-  });
+  }, { status: result.errors.length ? 502 : 200 });
 }

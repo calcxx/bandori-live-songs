@@ -55,6 +55,17 @@ describe("user event refresh coordination", () => {
     expect(releaseUserEventsAfterTransientFailure).not.toHaveBeenCalled();
   });
 
+  it("passes a fetched summary to the event fetch", async () => {
+    const summary = {
+      totalCount: 2,
+      numericUserId: 900002,
+      displayId: "User",
+      displayName: null,
+    };
+    await refreshCachedUserEventsDeduped("User", "user", undefined, summary);
+    expect(fetchAllUserEvents).toHaveBeenCalledWith("User", { summary });
+  });
+
   it.each([false, true])("background refresh fetches only when the lease is acquired: %s", async (acquired) => {
     vi.mocked(tryAcquireUserEventsRefreshLease).mockResolvedValue(acquired);
     scheduleUserEventsRefresh("User", "user", "User");

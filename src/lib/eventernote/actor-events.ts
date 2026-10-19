@@ -6,7 +6,8 @@ const userAgent =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36";
 
 const baseUrl = "https://www.eventernote.com";
-const eventernotePageTimeoutMs = 8000;
+const eventernotePageTimeoutMs = 15000;
+const eventernoteActorEventsPageSize = 1000;
 
 export const actorEventRankingEntrySchema = z.object({
   eventernoteEventId: z.number().int(),
@@ -123,6 +124,7 @@ async function fetchActorEventsPage(
   page = 1,
 ) {
   const url = new URL(`/actors/${actorId}/events`, baseUrl);
+  url.searchParams.set("limit", String(eventernoteActorEventsPageSize));
   if (page > 1) {
     url.searchParams.set("page", String(page));
   }

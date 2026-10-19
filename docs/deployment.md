@@ -75,7 +75,9 @@ npm run start
 | 接口 | 用途 | 建议时间（UTC） |
 |---|---|---|
 | `/api/cron/event-ranking` | 刷新各乐队演员页活动索引 | `16:00` |
-| `/api/cron/songs-sync` | 从 MusicBrainz 补充新歌并修正更早发售日 | `17:00` |
+| `/api/cron/songs-sync` | 从 MusicBrainz 最近 30 天记录补充新歌并修正更早发售日 | `17:00` |
+
+活动索引的演员页请求使用 `limit=1000` 单页抓取，超过单页容量时继续分页；RAISE A SUILEN 会额外抓取 THE THIRD(仮) 的演员来源。用户统计的 Eventernote 抓取策略见[架构说明](../ARCHITECTURE.md)。
 
 使用系统 cron、GitHub Actions 或云平台调度器请求：
 
@@ -87,12 +89,24 @@ curl -H "Authorization: Bearer $CRON_SECRET" https://your-domain/api/cron/songs-
 建议每天各执行一次，并错开调用时间。未配置 `CRON_SECRET` 时，两条接口仅在非生产环境允许匿名访问。
 本开源仓库不绑定具体托管平台，请在所选平台配置等效调度任务。
 
+`songs-sync` 支持 `?dryRun=1` 预览；同步部分失败时仍会返回已写入的结果，但 HTTP 状态为 `502`，调度器应据此告警。接口执行上限为 300 秒，内部抓取预算为 240 秒。
+
+需要补录历史窗口时，可在具备数据库环境变量的机器上运行：
+
+```bash
+npx tsx scripts/sync-recent-songs.ts --since=2026-08-15
+npx tsx scripts/sync-recent-songs.ts --since=2026-08-15 --apply
+```
+
+第一条命令只预览，第二条才写入；脚本会把完整决策报告保存到临时目录，并在部分失败时以非零状态退出。
+
 ## 7. 后续维护
 
 ### 更新曲目库
 
 通过管理页 `/admin/songs-import` 手动添加歌曲，导入自行维护的 catalog，或启用
-`/api/cron/songs-sync` 增量同步最近歌曲。
+`/api/cron/songs-sync` 增量同步最近 30 天的歌曲。同步会跳过视频、无效日期和标注为翻唱的录音；
+需要补录更早窗口时使用 `scripts/sync-recent-songs.ts --since=YYYY-MM-DD`。
 翻唱曲与企划共通歌曲可通过 `/admin/songs-import` 单独维护；自动导入不会删除这些手工记录。
 
 ### 从旧版本升级

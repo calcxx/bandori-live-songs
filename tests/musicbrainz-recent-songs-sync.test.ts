@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  coverWorkTitleFromRelations,
   filterMusicBrainzRecordingsForBand,
   isReleaseDateInWindow,
   lookbackSinceDate,
@@ -12,6 +13,9 @@ function existingMap(entries: ExistingSongRef[]) {
 }
 
 describe("lookbackSinceDate", () => {
+  it("defaults to thirty days to recover delayed upstream entries and missed runs", () => {
+    expect(lookbackSinceDate(new Date("2026-09-14T00:00:00Z"))).toBe("2026-08-15");
+  });
   it("returns UTC calendar date seven days before now", () => {
     expect(lookbackSinceDate(new Date("2026-07-15T08:30:00.000Z"), 7)).toBe("2026-07-08");
   });
@@ -166,6 +170,40 @@ describe("filterMusicBrainzRecordingsForBand", () => {
     ]);
   });
 
+  it("excludes recordings flagged as covers by their MusicBrainz work relation", () => {
+    const result = filterMusicBrainzRecordingsForBand(
+      "millsage",
+      [
+        {
+          title: "Stellar Stellar",
+          firstReleaseDate: "2026-09-22",
+          coverWorkTitle: "Stellar Stellar",
+        },
+        {
+          title: "鳴らす",
+          firstReleaseDate: "2026-09-30",
+        },
+      ],
+      sinceDate,
+      new Map(),
+    );
+
+    expect(result.skippedExcluded).toBe(1);
+    expect(result.toInsert).toEqual([
+      {
+        bandSlug: "millsage",
+        title: "鳴らす",
+        firstReleaseDate: "2026-09-30",
+        rawTitle: "鳴らす",
+      },
+    ]);
+    expect(result.decisions[0]).toMatchObject({
+      action: "skip",
+      reason: "excluded",
+      detail: "cover of work: Stellar Stellar",
+    });
+  });
+
   it("dedupes multiple versions of the same new song within one batch", () => {
     const result = filterMusicBrainzRecordingsForBand(
       "mygo",
@@ -223,4 +261,21 @@ it("does not propose database writes for impossible release dates", () => {
   expect(result.toInsert).toEqual([]);
   expect(result.toUpdate).toEqual([]);
   expect(result.decisions).toMatchObject([{ action: "skip", reason: "incomplete-date" }]);
+});
+
+describe("coverWorkTitleFromRelations", () => {
+  it("reads the cover attribute of a performance relation to a work", () => {
+    expect(
+      coverWorkTitleFromRelations([
+        { type: "performance", "target-type": "work", attributes: ["cover"], work: { title: "Stellar Stellar" } },
+      ]),
+    ).toBe("Stellar Stellar");
+  });
+
+  it("ignores relations without a cover attribute or without a work target", () => {
+    expect(coverWorkTitleFromRelations([{ "target-type": "work", attributes: [], work: { title: "鳴らす" } }])).toBeNull();
+    expect(coverWorkTitleFromRelations([{ "target-type": "artist", attributes: ["cover"] }])).toBeNull();
+    expect(coverWorkTitleFromRelations([{ "target-type": "work", attributes: ["cover"] }])).toBe("(untitled work)");
+    expect(coverWorkTitleFromRelations()).toBeNull();
+  });
 });

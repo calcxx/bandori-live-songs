@@ -8,7 +8,7 @@ vi.mock("@/lib/db/core", () => ({ getDb: () => ({
 }) }));
 vi.mock("@/lib/eventernote/client", () => ({
   eventernoteUserEventsParserVersion: 3,
-  fetchUserEventCount: vi.fn(),
+  fetchUserEventSummary: vi.fn(),
 }));
 vi.mock("@/lib/events/event-visibility-rules-store", () => ({
   readEventVisibilityRules: async () => ({ titleTagsToStrip: [] }),
@@ -23,7 +23,7 @@ vi.mock("@/lib/stats/user-events-refresh", () => ({
 }));
 
 import { getUserSongStats } from "@/lib/stats/get-user-song-stats";
-import { fetchUserEventCount } from "@/lib/eventernote/client";
+import { fetchUserEventSummary } from "@/lib/eventernote/client";
 import { refreshCachedUserEventsDeduped, scheduleUserEventsRefresh, refreshUserEventsInline } from "@/lib/stats/user-events-refresh";
 
 const now = new Date("2026-09-06T00:00:00Z");
@@ -40,7 +40,12 @@ beforeEach(() => {
   vi.setSystemTime(now);
   vi.stubEnv("DATABASE_URL", "postgres://example.invalid/test");
   state.cacheRows = [cache()];
-  vi.mocked(fetchUserEventCount).mockResolvedValue(0);
+  vi.mocked(fetchUserEventSummary).mockResolvedValue({
+    totalCount: 0,
+    numericUserId: null,
+    displayId: "User",
+    displayName: null,
+  });
   vi.mocked(refreshCachedUserEventsDeduped).mockResolvedValue(successfulRefresh);
   vi.mocked(refreshUserEventsInline).mockResolvedValue(successfulRefresh);
 });
@@ -56,7 +61,7 @@ describe("user stats cache transitions", () => {
   it("upgrades an old payload before validating its shape against the current schema", async () => {
     state.cacheRows = [{ ...cache(), parserVersion: 1, activities: [{ legacy: true }] }];
     await expect(getUserSongStats("User")).resolves.toMatchObject({ state: "ok", displayName: "Display", staleCacheUsed: false });
-    expect(fetchUserEventCount).not.toHaveBeenCalled();
+    expect(fetchUserEventSummary).not.toHaveBeenCalled();
   });
 
   it("does not apply an old error or schedule another refresh after an upgrade succeeds", async () => {
@@ -71,10 +76,30 @@ describe("user stats cache transitions", () => {
     await expect(getUserSongStats("User")).resolves.toMatchObject({ state: "upstream-error", message: "timeout" });
   });
 
+  it("passes the fetched summary to a triggered background refresh", async () => {
+    vi.mocked(fetchUserEventSummary).mockResolvedValue({
+      totalCount: 1,
+      numericUserId: 900002,
+      displayId: "User",
+      displayName: null,
+    });
+
+    await expect(getUserSongStats("User")).resolves.toMatchObject({
+      state: "ok",
+      staleCacheUsed: true,
+    });
+    expect(scheduleUserEventsRefresh).toHaveBeenCalledWith(
+      "User",
+      "user",
+      "User",
+      expect.objectContaining({ totalCount: 1, numericUserId: 900002 }),
+    );
+  });
+
   it("warms a cache miss without a redundant count fetch", async () => {
     state.cacheRows = [];
     await expect(getUserSongStats("User")).resolves.toMatchObject({ state: "warming", reason: "initializing" });
-    expect(fetchUserEventCount).not.toHaveBeenCalled();
+    expect(fetchUserEventSummary).not.toHaveBeenCalled();
     expect(scheduleUserEventsRefresh).toHaveBeenCalledOnce();
   });
 });
