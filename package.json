@@ -32,7 +32,7 @@
     "drizzle-orm": "^0.45.2",
     "html-to-image": "^1.11.13",
     "lucide-react": "^0.547.0",
-    "next": "16.3.4",
+    "next": "16.4.2",
     "postgres": "^3.4.7",
     "react": "19.2.4",
     "react-dom": "19.2.4",
@@ -40,7 +40,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@next/env": "16.3.4",
+    "@next/env": "16.4.2",
     "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^22.20.1",
@@ -49,7 +49,7 @@
     "@vitest/coverage-v8": "^4.1.11",
     "drizzle-kit": "^0.31.10",
     "eslint": "^9",
-    "eslint-config-next": "16.3.4",
+    "eslint-config-next": "16.4.2",
     "tailwindcss": "^4",
     "tsx": "^4.20.6",
     "typescript": "^5",
